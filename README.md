@@ -66,6 +66,11 @@ Parameters
 - `trimming`, float. trimming percentage for projection index, to be entered as pct/100 
 - `alpha`, float. Continuum coefficient. Only relevant if `ppdire` is used to 
             estimate (classical or robust) continuum regression.  
+- `ndir`, int. Number of directions to calculate per iteration.
+- `maxiter`, int. Maximal number of iterations.
+- `regopt`, str. Regression option for regression step y~T. Can be set
+                to `'OLS'` (default), `'robust'` (will run `sprm.rm`) or `'quantile'` 
+                (`statsmodels.regression.quantreg`). 
 - `center`, str. How to center the data. options accepted are options from
             `sprm.robcent` 
 - `center_data`, bool. 
@@ -73,6 +78,8 @@ Parameters
             is not a given. Will throw a warning. 
 - `whiten_data`, bool. Typically used for ICA (kurtosis as PI)
 - `square_pi`, bool. Whether to square the projection index upon evaluation. 
+- `compression`, bool. If `True`, an internal SVD compression step is used for 
+            flat data tables (p > n). Speds up the calculations. 
 - `copy`, bool. Whether to make a deep copy of the input data or not. 
 - `verbose`, bool. Set to `True` prints the iteration number. 
 - `return_scaling_object`, bool.
@@ -122,15 +129,9 @@ typically would not need to be cross-validated. They are:
 -   `y`, numpy vector or 1D matrix, either as `arg` directly or as `kwarg`
 -   `h`, int. Overrides `n_components` for an individual call to `fit`. Use with caution. 
 -   `dmetric`, str. Distance metric used internally. Defaults to `'euclidean'`
--   `ndir`, int. Number of directions to be calculated in grid plane. A higher 
-    value increase the quality of the solution. 
--   `maxiter`, int. Maximal number of iterations allowed for convergence.
--   `compression`, bool. Whether to SVD compress data if they are flat (p>n). 
 -   `mixing`, bool. Return mixing matrix? 
--   `regopt`, str. Which type of regression to apply for regression of y onto the 
-    x scores. Defaults to `'OLS'`. Other options are `'robust'` (calls `sprm.rm`) or 
-    `'quantile'` (calls `statsmodels.regression.quantreg`). Further parameters 
-    to these methods can be passed on as additional `kwargs`. 
+-   Further parameters to the regression methods can be passed on here 
+    as additional `kwargs`. 
   
 
 Ancillary functions 
@@ -138,182 +139,222 @@ Ancillary functions
 - `dicomo` (class):  (co-)moments 
 - `capi` (class): co-moment analysis projection index 
 
-Example
--------
+Examples
+========
+
+Load and Prepare Data
+---------------------
 To run a toy example: 
 - Source packages and data: 
-
+        
+        # Load data
         import pandas as ps
-        data = ps.read_csv("./Returns_shares.csv")
-        columns = data.columns[2:8]
-        data = data.values[:,2:8]
-        X = data[:,0:5]
-        y = data[:,5]
-        X0 = X.astype('float')
-        y0 = y.astype('float')
-        
-- Estimate and predict by SPRM
-        
-        from sprm import sprm
-        res_sprm = sprm(2,.8,'Hampel',.95,.975,.999,'median','mad',True,100,.01,'ally','xonly',columns,True)
-        res_sprm.fit(X0[:2666],y0[:2666])
-        res_sprm.predict(X0[2666:])
-        res_sprm.transform(X0[2666:])
-        res_sprm.weightnewx(X0[2666:])
-        res_sprm.get_params()
-        res_sprm.set_params(fun="Huber")
-        
-- Cross-validated using GridSearchCV: 
-        
         import numpy as np
-        from sklearn.model_selection import GridSearchCV 
-        res_sprm_cv = GridSearchCV(sprm(), cv=10, param_grid={"n_components": [1, 2, 3], 
-                                   "eta": np.arange(.1,.9,.05).tolist()})  
-        res_sprm_cv.fit(X0[:2666],y0[:2666])  
-        res_sprm_cv.best_params_
+        data = ps.read_csv("./data/Returns_shares.csv")
+        columns = data.columns[2:8]
+        (n,p) = data.shape
+        datav = np.matrix(data.values[:,2:8].astype('float64'))
+        y = datav[:,0]
+        X = datav[:,1:5]
         
+        # Scale data
+        from sprm import robcent
+        centring = robcent()
+        Xs = centring.fit(X)
         
-The Robust M (RM) estimator
-===========================
+Comparison of PP estimates to Scikit-Learn 
+------------------------------------------
+Let us at first run `ppdire` to produce slow, approximate PP estimates of 
+PCA and PLS. This makes it easy to verify that the algorithm is correct. 
+        
+- Projection Pursuit as a slow, approximate way to compute PCA. Compare:
+        
+        # PCA ex Scikit-Learn 
+        import sklearn.decomposition as skd
+        skpca = skd.PCA(n_components=4)
+        skpca.fit(Xs)
+        skpca.components_.T # sklearn outputs loadings as rows ! 
+        
+        # PP-PCA  
+        from ppdire import dicomo, ppdire
+        pppca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var'}, n_components=4)
+        pppca.fit(X)
+        pppca.x_loadings_
+        
+- Likewise, projection pursuit as a slow, approximate way to compute PLS. Compare: 
 
-RM has been implemented to be consistent with SPRM. It takes the same arguments, except for 'eta' and 'n_components', 
-because it does not perform dimension reduction nor variable selection. For the same reasons, the outputs are limited to regression
-outputs. Therefore, dimension reduction outputs like x_scores_, x_loadings_, etc. are not provided. 
+        # PLS ex Scikit-Learn 
+        skpls = skc.PLSRegression(n_components=4)
+        skpls.fit(Xs,(y-np.mean(y))/np.std(y))
+        skpls.x_scores_
+        skpls.coef_ 
+        Xs*skpls.coef_*np.std(y) + np.mean(y) 
         
-  Estimate and predict by RM: 
-  
-        from sprm import rm
-        res_rm = rm('Hampel',.95,.975,.999,'median','mad','specific',True,100,.01,columns,True)
-        res_rm.fit(X0[:2666],y0[:2666])
-        res_rm.predict(X0[2666:])
+        # PP-PLS 
+        pppls = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'cov'}, n_components=4, square_pi=True)
+        pppls.fit(X,y)
+        pppls.x_scores_
+        pppls.coef_scaled_ # Column 4 should agree with skpls.coef_
+        pppls.fitted_  
         
-The Sparse NIPALS (SNIPLS) estimator
-====================================
+Remark: Dimension Reduction techniques based on projection onto latent variables, 
+such as PCA, PLS and ICA, are sign indeterminate with respect to the components. 
+Therefore, signs of estimates by different algorithms can be opposed, yet the 
+absolute values should be identical up to algorithm precision.  Here, this implies
+that `sklearn` and `ppdire`'s `x_scores_` and `x_loadings` can have opposed signs,
+yet the coefficients and fitted responses should be identical. 
 
-SNIPLS is the non-robust sparse univariate PLS algorithm \[3\]. SNIPLS has been implemented to be consistent with SPRM. It takes the same arguments, except for 'fun' and 'probp1' through 'probp3', since these are robustness parameters. For the same reasons, the outputs are limited to sparse dimension reduction and regression outputs. Robustness related outputs like x_caseweights_ cannot be provided.
-        
-  Estimate and predict by SNIPLS: 
-  
-        from sprm import snipls
-        res_snipls = snipls(n_components=4, eta=.5)
-        res_snipls.fit(X0[:2666],y0[:2666])
-        res_snipls.predict(X0[2666:])
-        
-        
- 
-Plotting functionality
-======================
 
-The file sprm_plot.py contains a set of plot functions based on Matplotlib. The class sprm_plot contains plots for sprm objects, wheras the class sprm_plot_cv contains a plot for cross-validation. 
+Robust projection pursuit estimators
+------------------------------------
 
-Dependencies
-------------
-- pandas
-- numpy
-- matplotlib.pyplot
-- for plotting cross-validation results: sklearn.model_selection.GridSearchCV
+- Robust PCA based on the Median Absolute Deviation (MAD) \[2\]. 
+        
+        lcpca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var', 'center': 'median'}, n_components=4)
+        lcpca.fit(X)
+        lcpca.x_loadings_
+        # To extend to Robust PCR, just add y 
+        lcpca.fit(X,y,ndir=1000,regopt='robust')
+        
+- Robust Continuum Regression \[3\] based on trimmed covariance: 
 
-Paramaters
-----------
-- res_sprm, sprm. An sprm class object that has been fit.  
-- colors, list of str entries. Only mandatory input. Elements determine colors as: 
-    - \[0\]: borders of pane 
-    - \[1\]: plot background
-    - \[2\]: marker fill
-    - \[3\]: diagonal line 
-    - \[4\]: marker contour, if different from fill
-    - \[5\]: marker color for new cases, if applicable
-    - \[6\]: marker color for harsh calibration outliers
-    - \[7\]: marker color for harsh prediction outliers
-- markers, a list of str entries. Elements determkine markers for: 
-    - \[0\]: regular cases 
-    - \[1\]: moderate outliers 
-    - \[2\]: harsh outliers 
+        rcr = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'continuum'}, n_components=4, trimming=.1, alpha=.5)
+        rcr.fit(X,y=y,ndir=1000,regopt='robust')
+        rcr.x_loadings_
+        rcr.x_scores_
+        rcr.coef_scaled_
+        rcr.predict(X)
+        
+Remark: for RCR, the continuum parameter `alpha` tunes the result from multiple 
+regression (`alpha` -> 0) via PLS (`alpha` = 1) to PCR (`alpha` -> Inf). Of course, 
+the robust PLS option can also be accessed through `pi_arguments = {'mode' : 'cov'}, trimming=.1`. 
+
+
+Projection pursuit to analyze market data (CAPI)
+------------------------------------------------
+
+        from ppdire import capi 
+        est = ppdire(projection_index = capi, pi_arguments = {'max_degree' : 3,'projection_index': dicomo, 'scaling': False}, n_components=1, trimming=0,center_data=True,scale_data=True)
+        est.fit(X,y=y,ndir=200)
+        est.x_weights_
+        # These data aren't the greatest illustration. Evaluating CAPI 
+        # projections, makes more sense if y is a market index, e.g. SPX 
+        
+        
+Cross-validating through `scikit-learn` 
+---------------------------------------
+
+        from sklearn.model_selection import GridSearchCV
+        rcr_cv = GridSearchCV(ppdire(projection_index=dicomo, 
+                                    pi_arguments = {'mode' : 'continuum'}), 
+                              cv=10, 
+                              param_grid={"n_components": [1, 2, 3], 
+                                          "alpha": np.arange(.1,3,.3).tolist(),
+                                          "trimming": [0, .15]
+                                         }
+                             )
+        rcr_cv.fit(X[:2666],y[:2666]) 
+        rcr_cv.best_params_
+        rcr_cv.predict(X[2666:])
+        
+        
+Data compression
+----------------
+While `ppdire` is very flexible and can project according to a very wide variety 
+of projection indices, it can be computationally demanding. For flat data tables,
+a workaround has been built in.  
+
+        # Load flat data 
+        datan = ps.read_csv("./ppdire/data/Glass_df.csv")
+        X = datan.values[:,100:300]
+        y = datan.values[:,2]
+        
+        # Now compare
+        rcr = ppdire(projection_index = dicomo, 
+                    pi_arguments = {'mode' : 'continuum'}, 
+                    n_components=4, 
+                    trimming=.1, 
+                    alpha=.5, 
+                    compression = False)
+        rcr.coef_
+        
+        rcr = ppdire(projection_index = dicomo, 
+                    pi_arguments = {'mode' : 'continuum'}, 
+                    n_components=4, 
+                    trimming=.1, 
+                    alpha=.5, 
+                    compression = True)
+        rcr.coef_
+        
+However, compression will not work properly if the data contain several low scale 
+varables. In this example, it will not work for `X = datan.values[:,8:751]`. This 
+will throw a warning, and `ppdire` will continue woithout compression. 
+        
+        
+        
+        
+Calling the projection indices independently 
+--------------------------------------------
+Both `dicomo` and `capi` can be useful as a consistent framework to call moments
+themselves, or linear combinations of them. Let's extract univariate columns from
+the data: 
+
+        # Prepare univariate data
+        x = datav[:,1]
+        y = datav[:,2]
+        
+Now calculate some moments and compare them to `numpy`: 
+        
+        # Variance 
+        covest = dicomo() 
+        # division by n
+        covest.fit(x,biascorr=False)
+        np.var(x)
+        # division by n-1 
+        covest.fit(x,biascorr=True)
+        np.var(x)*n/(n-1)
+        # But we can also trim variance: 
+        covest.fit(x,biascorr=False,trimming=.1)
+        
+        # MAD  
+        import statsmodels.robust as srs
+        covest.set_params(center='median')
+        srs.mad(x)
+        
+        # 4th Moment 
+        import scipy.stats as sps
+        # if center is still median, reset it
+        covest.set_params(center='mean')
+        covest.fit(x,order=4)
+        sps.moment(x,4)
+        # Again, we can trim: 
+        covest.fit(x,order=4,trimming=.2)
+        
+        #Kurtosis 
+        covest.set_params(mode='kurt')
+        sps.kurtosis(x,fisher=False,bias=False) 
+        #Note that in scipy: bias = False corrects for bias
+        covest.fit(x,biascorr=True,Fisher=False)
+        
     
-Methods
--------
-- plot_coeffs(entity="coef_",truncation=0,columns=[],title=[]): Plot regression coefficients, loadings, etc. with the option only to plot the x% smallest and largets coefficients (truncation) 
-- plot_yyp(ytruev=[],Xn=[],label=[],names=[],namesv=[],title=[],legend_pos='lower right',onlyval=False): Plot y vs y predicted. 
-- plot_projections(Xn=[],label=[],components = [0,1],names=[],namesv=[],title=[],legend_pos='lower right',onlyval=False): Plot score space. 
-- plot_caseweights(Xn=[],label=[],names=[],namesv=[],title=[],legend_pos='lower right',onlyval=False,mode='overall'): Plot caseweights, with the option to plot 'x', 'y' or 'overall' case weights for cases used to train the model. For new cases, only 'x' weights can be plotted. 
+Likewise: co-moments
 
-Remark
-------
-The latter 3 methods will work both for cases that the models has been trained with (no additional input) or new cases (requires Xn and in case of plot_ypp, ytruev), with the option to plot only the latter (option onlyval = True). All three functions have the option to plot case names if supplied as list.       
-
-Ancillary classes
------------------- 
-- sprm_plot_cv has method eta_ncomp_contour(title) to plot sklearn GridSearchCV results 
-- ABline2D plots the first diagonal in y vs y predicted plots. 
-
-Example (continued) 
--------------------
-- initialize some values: 
+        # Covariance 
+        covest.set_params(mode='com')
+        data.iloc[:,2:8].cov() #Pandas Calculates n-1 division
+        covest.fit(x,y=y,biascorr=True)
         
-        colors = ["white","#BBBBDD","#0000DD",'#1B75BC','#4D4D4F','orange','red','black']
-        markers = ['o','d','v']
-        label = ["AIG"]
-        names = [str(i) for i in range(1,len(res_sprm.y)+1)]
-        namesv = [str(i) for i in range(1,len(y0[2667:])+1)]
+        # M4 (4th co-moment)
+        covest.set_params(mode='com')
+        covest.fit(x,y=y,biascorr=True,order=4,option=1)
         
-- run sprm.plot: 
+        # Co-kurtosis
+        covest.set_params(mode='cok')
+        covest.fit(x,y=y,biascorr=True,option=1)
         
-        from sprm import sprm_plot
-        res_sprm_plot = sprm_plot(res_sprm,colors)
         
-- plot coefficients: 
+These are just some options of the set that can be explored in `dicomo`. 
 
-        res_sprm_plot.plot_coeffs(title="All AIG SPRM scaled b")
-        res_sprm_plot.plot_coeffs(truncation=.05,columns=columns,title="5% smallest and largest AIG sprm b")
-        
-  ![AIG sprm regression coefficients](https://github.com/SvenSerneels/sprm/blob/master/img/AIG_b.png "AIG SPRM regression coefficients")
-
-- plot y vs y predicted, training cases only: 
-
-        res_sprm_plot.plot_yyp(label=label,title="AIG SPRM y vs. y predicted")
-        res_sprm_plot.plot_yyp(label=label,names=names,title="AIG SPRM y vs. y predicted")
-
-  ![AIG sprm y vs y predicted, taining set](https://github.com/SvenSerneels/sprm/blob/master/img/AIG_yyp_train.png "AIG SPRM y vs y predicted, training set")
-  
-- plot y vs y predicted, including test cases
-  
-        res_sprm_plot.plot_yyp(ytruev=y0[2667:],Xn=X0[2667:],label=label,names=names,namesv=namesv,title="AIG SPRM y vs. 
-                y predicted")            
-        res_sprm_plot.plot_yyp(ytruev=y0[2667:],Xn=X0[2667:],label=label,title="AIG SPRM y vs. y predicted")
-        
-   ![AIG sprm y vs y predicted, taining set](https://github.com/SvenSerneels/sprm/blob/master/img/AIG_yyp_train_test.png "AIG SPRM y vs y predicted")
-
-- plot y vs y predicted, only test set cases: 
-
-        res_sprm_plot.plot_yyp(ytruev=y0[2667:],Xn=X0[2667:],label=label,title="AIG SPRM y vs. y predicted",onlyval=True)
-  
-- plot score space, options as above, with the second one shown here: 
-
-        res_sprm_plot.plot_projections(Xn=X0[2667:],label=label,names=names,namesv=namesv,title="AIG SPRM score space, components 1 and 2")
-        res_sprm_plot.plot_projections(Xn=X0[2667:],label=label,title="AIG SPRM score space, components 1 and 2")
-        res_sprm_plot.plot_projections(Xn=X0[2667:],label=label,namesv=namesv,title="AIG SPRM score space, components 1 and 2",onlyval=True)
-        
-  
-   ![AIG sprm score space](https://github.com/SvenSerneels/sprm/blob/master/img/AIG_T12.png "AIG SPRM score space")
-
-- plot caseweights, options as above, with the second one shown here:
-
-        res_sprm_plot.plot_caseweights(Xn=X0[2667:],label=label,names=names,namesv=namesv,title="AIG SPRM caseweights")
-        res_sprm_plot.plot_caseweights(Xn=X0[2667:],label=label,title="AIG SPRM caseweights")
-        res_sprm_plot.plot_caseweights(Xn=X0[2667:],label=label,namesv=namesv,title="AIG SPRM caseweights",onlyval=True)  
-        
-   ![AIG sprm caseweights](https://github.com/SvenSerneels/sprm/blob/master/img/AIG_caseweights.png "AIG SPRM caseweights")
-   
-
-- plot cross-validation results: 
-
-        from sprm import sprm_plot_cv
-        res_sprm_plot_cv = sprm_plot_cv(res_sprm_cv,colors)
-        res_sprm_plot_cv.eta_ncomp_contour()
-        res_sprm_plot_cv.cv_score_table_
-        
-  ![AIG sprm CV results](https://github.com/SvenSerneels/sprm/blob/master/img/AIG_CV.png "AIG SPRM CV results")
-  
         
 References
 ----------
@@ -321,46 +362,15 @@ References
         Spiliopoulou, M., Kruse, R., Borgelt, C., Nuernberger, A. and Gaul, W., eds., 
         Springer Verlag, Berlin, Germany,
         2006, pages 270--277.
-2. [Partial robust M regression](https://doi.org/10.1016/j.chemolab.2005.04.007), Sven Serneels, Christophe Croux, Peter Filzmoser, Pierre J. Van Espen, Chemometrics and Intelligent Laboratory Systems, 79 (2005), 55-64.
-3. [Sparse and robust PLS for binary classification](https://onlinelibrary.wiley.com/doi/abs/10.1002/cem.2775), I. Hoffmann, P. Filzmoser, S. Serneels, K. Varmuza, Journal of Chemometrics, 30 (2016), 153-162.
-        
+2. Robust principal components and dispersion matrices via projection pursuit, Chen, Z. and Li, G., Research Report, Department of Statistics, Harvard University, 1981.
+3. [Robust Continuum Regression](https://www.sciencedirect.com/science/article/abs/pii/S0169743904002667), Sven Serneels, Peter Filzmoser, Christophe Croux, Pierre J. Van Espen, Chemometrics and Intelligent Laboratory Systems, 76 (2005), 197-204.
 
-Release notes
-=============
-
-Version 0.2.1
--------------
-- sprm now takes both numeric (n,1) np matrices and (n,) np.arrays as input 
-
-
-Version 0.2.0
--------------
-Changes compared to version 0.1: 
-- All functionalities can now be loaded in modular way, e.g. to use plotting functions, now source the plot function separately:
-        
-        from sprm import sprm_plot 
-        
-- The package now includes a robust M regression estimator (rm.py), which is a multiple regression only variant of sprm. 
-  It is based on the same iterative re-weighting scheme, buit does not perform dimension reduction, nor variable selection.
-- The robust preprocessing routine (robcent.py) has been re-written so as to be more consistent with sklearn.
-
-Version 0.3
------------
-All three estimators provided as separate classes in module:
-
-        from sprm import sprm 
-        from sprm import snipls
-        from sprm import rm
-        
-Also, sprm now includes a check for zero scales. It will remove zero scale variables from the input data, and only use 
-columns corresponding to nonzero predictor scales in new data. This check has not yet been built in for snipls or rm 
-separately. 
-        
-Plus some minor changes to make it consistent with the latest numpy and matplotlib versions. 
+    
 
 Work to do
 ----------
-- optimize alignment to sklearn
+- optimize alignment to `sklearn`
+- align to some of `sprm` plotting functions
 - optimize for speed 
 - extend to multivariate responses (open research topic !)
 - suggestions always welcome 

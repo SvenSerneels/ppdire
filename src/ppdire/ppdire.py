@@ -12,6 +12,7 @@ ppdire - Projection pursuit dimension reduction
 #from .dicomo import dicomo
 import numpy as np
 from statsmodels.regression.quantile_regression import QuantReg
+import statsmodels.robust as srs
 import scipy.stats as sps
 from scipy.linalg import pinv2
 import copy
@@ -49,13 +50,19 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         trimming: float, trimming percentage to be entered as pct/100 
         alpha: float. Continuum coefficient. Only relevant if ppdire is used to 
             estimate (classical or robust) continuum regression 
+        ndir: int: Number of directions to calculate per iteration.
+        maxiter: int. Maximal number of iterations.
+        regopt: str. regression option for regression step y~T. Can be set
+                to 'OLS' (default), 'robust' (will run sprm.rm) or 'quantile' 
+                (statsmodels.regression.quantreg). 
         center: str, how to center the data. options accepted are options from
             sprm.robcent 
         center_data: bool 
         scale_data: bool. Note: if set to False, convergence to correct optimum 
             is not a given. Will throw a warning. 
         whiten_data: bool. Typically used for ICA (kurtosis as PI)
-        square_pi: bool. Whether to square the projection index upon evaluation. 
+        square_pi: bool. Whether to square the projection index upon evaluation.
+        compression: bool. Use internal data compresion step for flat data. 
         copy: bool. Whether to make a deep copy of the input data or not. 
         verbose: bool. Set to True prints the iteration number. 
         return_scaling_object: bool. 
@@ -70,13 +77,17 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                  n_components = 1, 
                  trimming = 0,
                  alpha = 1,
+                 ndir = 1000, 
+                 maxiter = 1000, 
+                 regopt = 'OLS',
                  center = 'mean',
                  center_data=True,
                  scale_data=True,
                  whiten_data=False,
                  square_pi = False,
+                 compression = False,
                  copy=True,
-                 verbose=True,
+                 verbose=True, 
                  return_scaling_object=True):
         # Called arguments
         self.projection_index = projection_index
@@ -84,11 +95,15 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         self.n_components = n_components
         self.trimming = trimming
         self.alpha = alpha
+        self.ndir = ndir
+        self.maxiter = maxiter
+        self.regopt = regopt
         self.center = center
         self.center_data = center_data
         self.scale_data = scale_data
         self.whiten_data = whiten_data
         self.square_pi = square_pi
+        self.compression = compression
         self.copy = copy
         self.verbose = verbose
         self.return_scaling_object = return_scaling_object
@@ -111,7 +126,6 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         Optional keyword arguments: 
             
             y, np.matrix(n,1), second block of data 
-            ndir, int, number of directions to scan 
             biascorr, to apply bias correction at normal distribution 
             
         pi_arguments is a dict of arguments passed on to the projection index
@@ -130,16 +144,11 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         else:
             biascorr = kwargs.get('biascorr')
             
-        if (('ndir' not in kwargs) and ('ndir' not in pi_arguments)):
-            ndir = 100
-        else:
-            ndir = kwargs.get('ndir')
-            
         if len(pi_arguments) == 0:
             
             pi_arguments = {
                             'alpha': self.alpha,
-                            'ndir': ndir,
+                            'ndir': self.ndir,
                             'trimming': self.trimming,
                             'biascorr': biascorr, 
                             'dmetric' : 'euclidean'
@@ -163,7 +172,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             stop0c = np.arccos(optrange[1])
             anglestart = max(stop0c,stop0s)
             anglestop = max(stop1c,stop1s)
-            nangle = np.linspace(anglestart,anglestop,ndir,endpoint=False)            
+            nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=False)            
             alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
             if optmax != 1:
                 alphamat *= optmax
@@ -171,16 +180,17 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         tj = X*alphamat
         if self.square_pi:
             meas = [self.most.fit(tj[:,i],**pi_arguments)**2 
-            for i in np.arange(0,ndir)]
+            for i in np.arange(0,self.ndir)]
         else:
             meas = [self.most.fit(tj[:,i],**pi_arguments) 
-            for i in np.arange(0,ndir)]
+            for i in np.arange(0,self.ndir)]
             
         maximo = np.max(meas)
         indmax = np.where(meas == maximo)[0]
         if len(indmax)>0:
             indmax = indmax[0]
         wi = alphamat[:,indmax]
+        
         
         if (alphamat != None).all():
             setattr(self,'_stop0c',stop0c)
@@ -205,7 +215,6 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         Optional keyword arguments: 
             
             y, np.matrix(n,1), second block of data 
-            ndir, int, number of directions to scan 
             biascorr, to apply bias correction at normal distribution 
             
         pi_arguments is a dict of arguments passed on to the projection index
@@ -222,17 +231,12 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             biascorr = False
         else:
             biascorr = kwargs.get('biascorr')
-                
-        if (('ndir' not in kwargs) and ('ndir' not in pi_arguments)):
-            ndir = 100
-        else:
-            ndir = kwargs.get('ndir')
             
         if len(pi_arguments) == 0:
             
             pi_arguments = {
                             'alpha': self.alpha,
-                            'ndir': ndir,
+                            'ndir': self.ndir,
                             'trimming': self.trimming,
                             'biascorr': biascorr, 
                             'dmetric' : 'euclidean'
@@ -251,7 +255,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         if (alphamat != None).all():
             anglestart = min(self._stop0c,self._stop0s)
             anglestop = min(self._stop1c,self._stop1s)
-            nangle = np.linspace(anglestart,anglestop,ndir,endpoint=True)
+            nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=True)
             alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
             if self.optmax != 1:
                 alphamat *= self.optmax
@@ -262,10 +266,10 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         
         if self.square_pi:
             meas = [self.most.fit(tj[:,i],**pi_arguments)**2 
-            for i in np.arange(0,ndir)]
+            for i in np.arange(0,self.ndir)]
         else:
             meas = [self.most.fit(tj[:,i],**pi_arguments) 
-            for i in np.arange(0,ndir)]
+            for i in np.arange(0,self.ndir)]
 
         maximo = np.max(meas)
         indmax = np.where(meas == maximo)[0]
@@ -296,21 +300,12 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 
             dmetric, str: distance metric used internally. Defaults to 'euclidean'
             
-            ndir, int: number of directions to compute in grid planes. Increases 
-                precision of the solution when higher, yet computes longer. 
-                
-            maxiter, int: maximal number of iterations to calculate 
-            
-            compression, bool: whether to use SVD data compression for flat data 
-                tables (p > n)
-            
             mixing, bool: to estimate mixing matrix (only relevant for ICA)
             
+            Further parameters to the regression methods can be passed on 
+            here as well as kwargs, e.g. quantile=0.8 for quantile regression. 
+            
             kwargs only relevant if y specified: 
-            regopt, str: regression option for regression step y~T. Can be set
-                to 'OLS' (default), 'robust' (will run sprm.rm) or 'quantile' 
-                (statsmodels.regression.quantreg). Further parameters to these methods
-                can be passed on as well as kwargs, e.g. quantile=0.8. 
         
         """
 
@@ -328,21 +323,6 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         else:
             dmetric = kwargs.get('dmetric')
             
-        if 'ndir' not in kwargs:
-            ndir = 1000
-        else:
-            ndir = kwargs.get('ndir')
-            
-        if 'maxiter' not in kwargs:
-            maxiter = 10000
-        else:
-            maxiter = kwargs.get('maxiter')
-            
-        if 'compression' not in kwargs:
-            compression = False
-        else:
-            compression = kwargs.get('compression')
-            
         if 'mixing' not in kwargs:
             mixing = False
         else:
@@ -353,22 +333,19 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             if na > 0: #Use of *args makes it sklearn consistent
                 flag = 'two-block'
                 y = args[0]
-                regopt = kwargs.pop('regopt','OLS')
             else:
                 flag = 'one-block'
                 y = 0 # to allow calls with 'y=y' in spit of no real y argument present
         else:
             flag = 'two-block'
             y = kwargs.get('y')
-            
-            regopt = kwargs.pop('regopt','OLS')
-                
+                            
             if 'quantile' not in kwargs:
                 quantile = .5
             else:
                 quantile = kwargs.get('quantile')
                 
-            if regopt == 'robust':
+            if self.regopt == 'robust':
             
                 if 'fun' not in kwargs:
                     fun = 'Hampel'
@@ -413,7 +390,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         else:
             X0 = X        
         X0 = np.array(X0).astype('float64')    
-        n,p = X.shape 
+        n,p = X0.shape 
         trimming = self.trimming
         
         # Check dimensions 
@@ -441,23 +418,29 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             warnings.warn('Without scaling, convergence to optima is not given')
             
          # Data Compression for flat tables if required                
-        if (p>n) and compression:
+        if ((p>n) and self.compression):
             V,S,U = np.linalg.svd(X.T,full_matrices=False)
             X = U.T*np.diag(S)
             n,p = X.shape
-            dimensions = 1
+            
+            if (srs.mad(X)==0).any(): 
+                warnings.warn('Due to low scales in data, compression would induce zero scales.' 
+                              + '\n' + 'Proceeding without compression.')
+                dimensions = 0
+            else:
+                dimensions = 1
         else:
-            dimensions = 0            
+            dimensions = 0
         
         # Initiate centring object and scale X data 
         centring = robcent(center=self.center,scale=scale)      
   
-      if self.center_data:
-            Xs = centring.fit(X,trimming=trimming)
+        if self.center_data:
+            Xs = centring.fit(X0,trimming=trimming)
             mX = centring.col_loc_
             sX = centring.col_sca_
         else:
-            Xs = X
+            Xs = X0
             mX = np.zeros((1,p))
             sX = np.ones((1,p))
 
@@ -526,7 +509,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         stop0c = np.arccos(optrange[1])
         anglestart = max(stop0c,stop0s)
         anglestop = max(stop1c,stop1s)
-        nangle = np.linspace(anglestart,anglestop,ndir,endpoint=False)            
+        nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=False)            
         alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
         if optmax != 1:
             alphamat *= optmax
@@ -539,7 +522,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         if p>2:
             anglestart = min(self._stop0c,self._stop0s)
             anglestop = min(self._stop1c,self._stop1s)
-            nangle = np.linspace(anglestart,anglestop,ndir,endpoint=True)
+            nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=True)
             alphamat2 = np.matrix([np.cos(nangle), np.sin(nangle)])
             if self.optmax != 1:
                 alphamat2 *= self.optmax
@@ -548,7 +531,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         grid_args = { 
                      'alpha': self.alpha,
                      'alphamat': alphamat,
-                     'ndir': ndir,
+                     'ndir': self.ndir,
                      'trimming': self.trimming,
                      'biascorr': biascorr, 
                      'dmetric' : 'euclidean'
@@ -560,7 +543,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         grid_args_2 = { 
                      'alpha': self.alpha,
                      'alphamat': alphamat2,
-                     'ndir': ndir,
+                     'ndir': self.ndir,
                      'trimming': self.trimming,
                      'biascorr': biascorr, 
                      'dmetric' : 'euclidean'
@@ -614,9 +597,9 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 objf = -1000
                 afinbest = afin
                 ii = 0
-                maxiter_2j = 2**round(np.log2(maxiter)) 
+                maxiter_2j = 2**round(np.log2(self.maxiter)) 
                 
-                while ((ii < maxiter+1) and (abs(objfold - objf)/abs(objf) > 1e-4)):
+                while ((ii < self.maxiter+1) and (abs(objfold - objf)/abs(objf) > 1e-4)):
                     for j in np.arange(0,p):
                         projmat = np.matrix([np.array(Zopt[:,0]).reshape(-1),
                                          np.array(Z[:,j]).reshape(-1)]).T
@@ -695,15 +678,15 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         
             # Execute regression y~T if y is present. Generate regression estimates.
             if flag != 'one-block':
-                if regopt=='OLS':
+                if self.regopt=='OLS':
                     ci = np.dot(ti.T,ys)/(nti**2)
-                elif regopt == 'robust':
+                elif self.regopt == 'robust':
                     linfit = rm(fun=fun,probp1=probp1,probp2=probp2,probp3=probp3,
                                 centre=self.center,scale=scale,
                                 start_cutoff_mode='specific',verbose=self.verbose)
                     linfit.fit(ti,ys)
                     ci = linfit.coef_
-                elif regopt == 'quantile':
+                elif self.regopt == 'quantile':
                     linfit = QuantReg(y,ti)
                     model = linfit.fit(q=quantile)
                     ci = model.params
@@ -787,14 +770,15 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         if self.return_scaling_object:
             setattr(self,'scaling_object_',centring)
         
-        return(T)   
+        return(self)   
 
 
     def predict(self,Xn):
         (n,p) = Xn.shape
-        if p!= self.coef_.shape[0]:
+        (q,h) = self.coef_.shape
+        if p!=q:
             raise(ValueError('New data must have seame number of columns as the ones the model has been trained with'))
-        return(np.matmul(Xn,self.coef_) + self.intercept_)
+        return(np.array(np.matmul(Xn,self.coef_[:,h-1]) + self.intercept_).T.reshape(-1))
         
     def transform(self,Xn):
         (n,p) = Xn.shape
@@ -802,3 +786,87 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             raise(ValueError('New data must have seame number of columns as the ones the model has been trained with'))
         Xnc = self.scaling_object_.scale_data(Xn,self.x_loc_,self.x_sca_)
         return(Xnc*self.x_rotations_)
+        
+    @classmethod   
+    def _get_param_names(cls):
+        """Get parameter names for the estimator"""
+        # fetch the constructor or the original constructor before
+        # deprecation wrapping if any
+        init = getattr(cls.__init__, 'deprecated_original', cls.__init__)
+        if init is object.__init__:
+            # No explicit constructor to introspect
+            return []
+    
+        # introspect the constructor arguments to find the model parameters
+        # to represent
+        init_signature = inspect.signature(init)
+        # Consider the constructor parameters excluding 'self'
+        parameters = [p for p in init_signature.parameters.values()
+                      if p.name != 'self' and p.kind != p.VAR_KEYWORD]
+        for p in parameters:
+            if p.kind == p.VAR_POSITIONAL:
+                raise RuntimeError("scikit-learn estimators should always "
+                                   "specify their parameters in the signature"
+                                   " of their __init__ (no varargs)."
+                                   " %s with constructor %s doesn't "
+                                   " follow this convention."
+                                   % (cls, init_signature))
+        # Extract and sort argument names excluding 'self'
+        return sorted([p.name for p in parameters])
+    
+    def get_params(self, deep=False):
+        """Get parameters for this estimator.
+        Parameters
+        ----------
+        deep : boolean, optional
+            If True, will return the parameters for this estimator and
+            contained subobjects that are estimators.
+        Returns
+        -------
+        params : mapping of string to any
+            Parameter names mapped to their values.
+        ------
+        Copied from ScikitLlearn instead of imported to avoid 'deep=True'
+        """
+        out = dict()
+        for key in self._get_param_names():
+            value = getattr(self, key, None)
+            if deep and hasattr(value, 'get_params'):
+                deep_items = value.get_params().items()
+                out.update((key + '__' + k, val) for k, val in deep_items)
+            out[key] = value
+        return out
+        
+    def set_params(self, **params):
+        """Set the parameters of this estimator.
+        Copied from ScikitLearn, adapted to avoid calling 'deep=True'
+        Returns
+        -------
+        self
+        ------
+        Copied from ScikitLlearn instead of imported to avoid 'deep=True'
+        """
+        if not params:
+            # Simple optimization to gain speed (inspect is slow)
+            return self
+        valid_params = self.get_params()
+    
+        nested_params = defaultdict(dict)  # grouped by prefix
+        for key, value in params.items():
+            key, delim, sub_key = key.partition('__')
+            if key not in valid_params:
+                raise ValueError('Invalid parameter %s for estimator %s. '
+                                 'Check the list of available parameters '
+                                 'with `estimator.get_params().keys()`.' %
+                                 (key, self))
+    
+            if delim:
+                nested_params[key][sub_key] = value
+            else:
+                setattr(self, key, value)
+                valid_params[key] = value
+    
+        for key, sub_params in nested_params.items():
+            valid_params[key].set_params(**sub_params)
+    
+        return self

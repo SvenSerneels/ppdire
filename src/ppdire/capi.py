@@ -95,7 +95,7 @@ class capi(_BaseComposition,BaseEstimator):
         self.moments_ = moments
         return(capi_index_)
         
-    
+        
     @classmethod   
     def _get_param_names(cls):
         """Get parameter names for the estimator"""
@@ -105,7 +105,7 @@ class capi(_BaseComposition,BaseEstimator):
         if init is object.__init__:
             # No explicit constructor to introspect
             return []
-
+    
         # introspect the constructor arguments to find the model parameters
         # to represent
         init_signature = inspect.signature(init)
@@ -122,7 +122,7 @@ class capi(_BaseComposition,BaseEstimator):
                                    % (cls, init_signature))
         # Extract and sort argument names excluding 'self'
         return sorted([p.name for p in parameters])
-
+    
     def get_params(self, deep=False):
         """Get parameters for this estimator.
         Parameters
@@ -159,7 +159,7 @@ class capi(_BaseComposition,BaseEstimator):
             # Simple optimization to gain speed (inspect is slow)
             return self
         valid_params = self.get_params()
-
+    
         nested_params = defaultdict(dict)  # grouped by prefix
         for key, value in params.items():
             key, delim, sub_key = key.partition('__')
@@ -168,15 +168,18 @@ class capi(_BaseComposition,BaseEstimator):
                                  'Check the list of available parameters '
                                  'with `estimator.get_params().keys()`.' %
                                  (key, self))
-
+    
             if delim:
                 nested_params[key][sub_key] = value
             else:
                 setattr(self, key, value)
                 valid_params[key] = value
-
+    
         for key, sub_params in nested_params.items():
             valid_params[key].set_params(**sub_params)
-
+    
         return self
     
+            
+        
+        
