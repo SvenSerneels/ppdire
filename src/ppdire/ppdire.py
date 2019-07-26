@@ -390,6 +390,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         else:
             X0 = X        
         X0 = np.array(X0).astype('float64')    
+        X = X0
         n,p = X0.shape 
         trimming = self.trimming
         
@@ -436,11 +437,11 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         centring = robcent(center=self.center,scale=scale)      
   
         if self.center_data:
-            Xs = centring.fit(X0,trimming=trimming)
+            Xs = centring.fit(X,trimming=trimming)
             mX = centring.col_loc_
             sX = centring.col_sca_
         else:
-            Xs = X0
+            Xs = X
             mX = np.zeros((1,p))
             sX = np.ones((1,p))
 
