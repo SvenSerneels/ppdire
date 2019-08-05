@@ -26,14 +26,14 @@ except ImportError:
         readme = f.read()
 
 setup(
-    name="sprm",
+    name="ppdire",
     version=__version__,
     author=__author__,
     author_email="svenserneels@gmail.com",
-    description="Sparse Partial Robust M Regression, including plot functions",
+    description="Projection Pursuit Dimension Reduction",
     long_description=readme,
     long_description_content_type='text/markdown',
-    url="https://github.com/SvenSerneels/sprm",
+    url="https://github.com/SvenSerneels/ppdire",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
@@ -48,7 +48,8 @@ setup(
         'matplotlib>=2.2.0',
         'scikit-learn>=0.18.0',
         'pandas>=0.19.0',
-        'statsmodels>=0.8.0'
+        'statsmodels>=0.8.0', 
+        'sprm>=0.3.0'
     ]
 )
 

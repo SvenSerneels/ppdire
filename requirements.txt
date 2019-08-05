@@ -20,6 +20,7 @@ pandas
 statsmodels
 numpy
 warnings
+sprm
 
 #
 ###### Requirements with Version Specifiers ######
