@@ -10,7 +10,8 @@ from sklearn.base import BaseEstimator
 from sklearn.utils.metaestimators import _BaseComposition
 from collections import defaultdict
 import inspect
-from . import dicomo
+from .dicomo import dicomo 
+from ._dicomo_utils import * 
 
 class capi(_BaseComposition,BaseEstimator):
     

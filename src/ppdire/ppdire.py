@@ -22,6 +22,9 @@ from sklearn.utils.extmath import svd_flip
 from sprm import rm, robcent
 from sprm._m_support_functions import MyException
 import warnings
+from .dicomo import dicomo 
+from ._dicomo_utils import * 
+from .capi import capi
 
 class MyException(Exception):
         pass
