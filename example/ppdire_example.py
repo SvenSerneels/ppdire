@@ -47,36 +47,17 @@ for i in data_example.columns:
 ax.set_xlabel('Date')
 ax.set_ylabel('Close Prices (USD)')
 ax.legend()
- 
-# Benchmark PLS
-dataw = np.matrix(returns.values.astype('float64'))
-y = dataw[:,6]
-X = dataw[:,0:6]
-X = returns.iloc[:,0:6].to_numpy()
-y = returns.iloc[:,6].to_numpy()
-from sprm import robcent
-centring = robcent()
-Xs = centring.fit(X)
-est3 = skc.PLSRegression(n_components=4)
-est3.fit(Xs,(y-np.mean(y))/np.std(y))
-est3.x_scores_
-est3.x_weights_
-est3.y_weights_
-est3.y_scores_
-est3.coef_
-Xs*est3.coef_*np.std(y) + np.mean(y) 
+
 
 # ppdire
-runfile('/home/sven/Documents/PyDox/dicomo/dicomo.py', wdir='/home/sven/Documents/PyDox/dicomo')
-runfile('/home/sven/Documents/PyDox/dicomo/ppdire.py', wdir='/home/sven/Documents/PyDox/dicomo')
-runfile('/home/sven/Documents/PyDox/dicomo/capi.py', wdir='/home/sven/Documents/PyDox/dicomo')
+from ppdire import dicomo, capi, ppdire
 est = ppdire(projection_index = capi, pi_arguments = {'max_degree' : 3,'projection_index': dicomo}, n_components=2, trimming=0,center_data=False,scale_data=False)
 est.fit(X,y=y,ndir=1000,regopt='OLS')
 est.x_weights_
 
 
 # Big example
-# Pproblem with 'GOLD' quotations
+# Problem with 'GOLD' quotations
 tickers = ['GS','EMN','CVX','SA','FNV','BXMT','TLT','WPM','XOM','KMB','AIG','SPY']
 from pandas_datareader import data as psdat
 start_date = '07-01-2018'
@@ -114,71 +95,10 @@ for i in data_example.columns:
 ax.set_xlabel('Date')
 ax.set_ylabel('Close Prices (USD)')
 ax.legend()
- 
-# Benchmark PLS
-dataw = np.matrix(returns.values.astype('float64'))
-y = dataw[:,8]
-X = dataw[:,np.setdiff1d(np.arange(0,12),8)]
-X = returns.iloc[:,0:6].to_numpy()
-y = returns.iloc[:,6].to_numpy()
-from sprm import robcent
-centring = robcent()
-Xs = centring.fit(X)
-est3 = skc.PLSRegression(n_components=4)
-est3.fit(Xs,(y-np.mean(y))/np.std(y))
-est3.x_scores_
-est3.x_weights_
-est3.y_weights_
-est3.y_scores_
-est3.coef_
-Xs*est3.coef_*np.std(y) + np.mean(y) 
 
-# ppdire
-runfile('/home/sven/Documents/PyDox/dicomo/dicomo.py', wdir='/home/sven/Documents/PyDox/dicomo')
-runfile('/home/sven/Documents/PyDox/dicomo/ppdire.py', wdir='/home/sven/Documents/PyDox/dicomo')
-runfile('/home/sven/Documents/PyDox/dicomo/capi.py', wdir='/home/sven/Documents/PyDox/dicomo')
 est = ppdire(projection_index = capi, pi_arguments = {'max_degree' : 3,'projection_index': dicomo}, n_components=1, trimming=0,center_data=True,scale_data=False)
 est.fit(X,y=y,ndir=200)
 est.x_weights_
-
-# Portfolio Optimization
-# start with Returns.csv as usual, then data from above
-
-datar = data.iloc[:,1:8]
-## install locally 
-# pip install -e ./OptimalPortfolio 
-# Run from level above folder that contains setup.py
-runfile('/home/sven/Documents/PyDox/OptimalPortfolio/portfolioopt/opt_allocations.py', wdir='/home/sven/Documents/PyDox/OptimalPortfolio/portfolioopt')
-runfile('/home/sven/Documents/PyDox/OptimalPortfolio/portfolioopt/exp_max.py', wdir='/home/sven/Documents/PyDox/OptimalPortfolio/portfolioopt')
-runfile('/home/sven/Documents/PyDox/OptimalPortfolio/portfolioopt/moment_est.py', wdir='/home/sven/Documents/PyDox/OptimalPortfolio/portfolioopt')
-location = datar.mean(axis=0)
-scale = datar.cov()
-skew = sample_skew(datar.iloc[:,1:7])  # Rreturns colwise skews
-kurt = sample_kurt(datar.iloc[:,1:7])  # Rreturns colwise skews
-portfolio = OptimalAllocations(6,location,scale,datar.columns[1:7])
-opt_sharpe = portfolio.sharpe_opt(0)  
-# Compare to other py package
-from pypfopt.efficient_frontier import EfficientFrontier
-efff = EfficientFrontier(location,scale)
-efff.max_sharpe(0) # returns Dict 
-efff.weights # Returns weights as array
-# same thing
-# opt_m4 = portfolio.moment ... WRONG in original package. Crashes and uses colwise M3,M4
-coskew = sample_coM3(invariants)
-cokurt = sample_coM4(invariants)
-import timeit
-t = timeit.default_timer()
-opt_com = portfolio.comoment_optimisation(coskew,cokurt,.25,.25,.25,.25)
-tt = timeit.default_timer() - t
-efff.custom_objective(comoment_utility,location,scale,coskew,cokurt,.25,.25,.25,.25) # same
-
-# data_example from above
-(ne,pe)=data_example.shape
-returns_example = stock_invariants(data_example,pe-1)
-location = returns_example.mean(axis=0)
-scale = returns_example.cov()
-portfolio = OptimalAllocations(pe-1,location,scale,data_example.columns)
-opt_sharpe = portfolio.sharpe_opt(0)  
 
 
 
