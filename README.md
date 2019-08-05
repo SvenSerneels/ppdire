@@ -16,20 +16,26 @@ indices.
 While the package will also work with user-defined projection indices, a set of projection indices are 
 included into the package as two ancillary classes: 
 - `dicomo` for (co-)moment statistics 
-- `capi` specifically for analyzing financial market returns based on a linear combination of co-moments 
+- `capi` specifically for analyzing financial market returns based on a linear combination of co-moments \[2\] 
 
 When using the `dicomo` class as a plugin, several well-known multivariate dimension reduction techniques 
 are accessible, as well as robust alternatives thereto. For more details, see the Example below. 
 
-Note: all the methods contained in this package have been designed for continuous data. They do not work correctly for caetgorical or textual data. 
+Remarks: 
+- all the methods contained in this package have been designed for continuous data. They do not work correctly for categorical or textual data.
+- this package focuses on projection pursuit dimension reduction. Regression methods that involve a dimension reduction step can be accessed through it 
+  (e.g. PCR, PLS, RCR, ...), yet the package does not provide an implementation for projection pursuit regression (PPR). To access PPR, we refer to 
+  the `projection-pursuit` package, also distributed through PIP.    
         
 The code is aligned to ScikitLearn, such that modules such as GridSearchCV can flawlessly be applied to it. 
 
 The repository contains
-- The estimator (ppdire.py) 
-- A class to estimate co-moments (dicomo.py)
-- A class for the co-moment analysis projection index (capi.py)
-- Ancillary functions for co-moment estimation (_dicomo_utils.py)
+- The estimator (`ppdire.py`) 
+- A class to estimate co-moments (`dicomo.py`)
+- A class for the co-moment analysis projection index (`capi.py`)
+- Ancillary functions for co-moment estimation (`_dicomo_utils.py`)
+
+Note: 
 
 How to install
 --------------
@@ -208,7 +214,7 @@ yet the coefficients and fitted responses should be identical.
 Robust projection pursuit estimators
 ------------------------------------
 
-- Robust PCA based on the Median Absolute Deviation (MAD) \[2\]. 
+- Robust PCA based on the Median Absolute Deviation (MAD) \[3\]. 
         
         lcpca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var', 'center': 'median'}, n_components=4)
         lcpca.fit(X)
@@ -216,7 +222,7 @@ Robust projection pursuit estimators
         # To extend to Robust PCR, just add y 
         lcpca.fit(X,y,ndir=1000,regopt='robust')
         
-- Robust Continuum Regression \[3\] based on trimmed covariance: 
+- Robust Continuum Regression \[4\] based on trimmed (co)variance: 
 
         rcr = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'continuum'}, n_components=4, trimming=.1, alpha=.5)
         rcr.fit(X,y=y,ndir=1000,regopt='robust')
@@ -230,8 +236,11 @@ regression (`alpha` -> 0) via PLS (`alpha` = 1) to PCR (`alpha` -> Inf). Of cour
 the robust PLS option can also be accessed through `pi_arguments = {'mode' : 'cov'}, trimming=.1`. 
 
 
-Projection pursuit to analyze market data (CAPI)
-------------------------------------------------
+Projection pursuit generalized betas
+------------------------------------
+
+Generalized betas are obtained as the projection pursuit weights using the 
+co-moment analysis projection index (CAPI) \[2\]. 
 
         from ppdire import capi 
         est = ppdire(projection_index = capi, pi_arguments = {'max_degree' : 3,'projection_index': dicomo, 'scaling': False}, n_components=1, trimming=0,center_data=True,scale_data=True)
@@ -288,7 +297,7 @@ a workaround has been built in.
         
 However, compression will not work properly if the data contain several low scale 
 varables. In this example, it will not work for `X = datan.values[:,8:751]`. This 
-will throw a warning, and `ppdire` will continue woithout compression. 
+will throw a warning, and `ppdire` will continue without compression. 
         
         
         
@@ -362,8 +371,9 @@ References
         Spiliopoulou, M., Kruse, R., Borgelt, C., Nuernberger, A. and Gaul, W., eds., 
         Springer Verlag, Berlin, Germany,
         2006, pages 270--277.
-2. Robust principal components and dispersion matrices via projection pursuit, Chen, Z. and Li, G., Research Report, Department of Statistics, Harvard University, 1981.
-3. [Robust Continuum Regression](https://www.sciencedirect.com/science/article/abs/pii/S0169743904002667), Sven Serneels, Peter Filzmoser, Christophe Croux, Pierre J. Van Espen, Chemometrics and Intelligent Laboratory Systems, 76 (2005), 197-204.
+2. [Projection pursuit based generalized betas accounting for higher order co-moment effects in financial market analysis](https://arxiv.org/pdf/1908.00141.pdf), Sven Serneels, arXiv preprint 1908.00141, 2019. 
+3. Robust principal components and dispersion matrices via projection pursuit, Chen, Z. and Li, G., Research Report, Department of Statistics, Harvard University, 1981.
+4. [Robust Continuum Regression](https://www.sciencedirect.com/science/article/abs/pii/S0169743904002667), Sven Serneels, Peter Filzmoser, Christophe Croux, Pierre J. Van Espen, Chemometrics and Intelligent Laboratory Systems, 76 (2005), 197-204.
 
     
 
