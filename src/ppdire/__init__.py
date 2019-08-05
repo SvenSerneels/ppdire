@@ -12,9 +12,10 @@ __license__ = "GNU"
 __version__ = "0.0.1"
 __date__ = "2019-07-09"
 
-from .ppdire import ppdire
 from .dicomo import dicomo
 from .capi import capi
+from .ppdire import ppdire
+
 
 
 
