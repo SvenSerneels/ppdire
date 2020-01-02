@@ -11,10 +11,19 @@ import scipy.spatial as spp
 import numpy as np
 import copy
 
+# Use direct mean or trimmed mean where appropriate
+# Using trimmed mean, even with 0% trimming, will cause errors in QP optimization
+def trim_mean(x,trimming):
+    
+    if trimming == 0: 
+        return(np.mean(x))
+    else:
+        return(sps.trim_mean(x,trimming)[0])
+
 # Calculate trimmed variance
 def trimvar(x,trimming):
         # division by n
-        return(sps.trim_mean(np.square(x - sps.trim_mean(x,trimming)),trimming))
+        return(trim_mean(np.square(x - trim_mean(x,trimming)),trimming))
 
 # Dummy identity function       
 def identity(x): 
@@ -69,6 +78,7 @@ def trim_mom(x,y,locest,order,trimming,option,fscorr=True):
         if len(como.shape)>1: 
             como = como[0,0]
         else:
-            como = como[0]
+            if type(como) is np.ndarray:
+                como = como[0]
         
         return(como)

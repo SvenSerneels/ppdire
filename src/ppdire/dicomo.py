@@ -220,7 +220,7 @@ class dicomo(_BaseComposition,BaseEstimator):
         if self.center == 'median':
             locest = np.median
         else:
-            locest = sps.trim_mean
+            locest = trim_mean
         
         # Classical variance, covariance and continuum as well as robust alternatives
         if self.est=='arithmetic':

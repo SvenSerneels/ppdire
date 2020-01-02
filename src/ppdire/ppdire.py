@@ -15,6 +15,7 @@ from statsmodels.regression.quantile_regression import QuantReg
 import statsmodels.robust as srs
 import scipy.stats as sps
 from scipy.linalg import pinv2
+from scipy.optimize import minimize
 import copy
 from sklearn.utils.metaestimators import _BaseComposition
 from sklearn.base import RegressorMixin,BaseEstimator,TransformerMixin
@@ -25,6 +26,8 @@ import warnings
 from .dicomo import dicomo 
 from ._dicomo_utils import * 
 from .capi import capi
+from ._ppdire_utils import gridplane, gridplane_2, dicomo_max
+import inspect
 
 class MyException(Exception):
         pass
@@ -53,8 +56,12 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         trimming: float, trimming percentage to be entered as pct/100 
         alpha: float. Continuum coefficient. Only relevant if ppdire is used to 
             estimate (classical or robust) continuum regression 
-        ndir: int: Number of directions to calculate per iteration.
-        maxiter: int. Maximal number of iterations.
+        optimizer: str. Presently: either 'grid' (native optimizer) or 
+            any of the options in scipy-optimize (e.g. 'SLSQP')
+        optimizer_options: dict with options to pass on to the optimizer. 
+            If optimizer == 'grid',
+            ndir: int: Number of directions to calculate per iteration.
+            maxiter: int. Maximal number of iterations.
         regopt: str. regression option for regression step y~T. Can be set
                 to 'OLS' (default), 'robust' (will run sprm.rm) or 'quantile' 
                 (statsmodels.regression.quantreg). 
@@ -80,8 +87,8 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                  n_components = 1, 
                  trimming = 0,
                  alpha = 1,
-                 ndir = 1000, 
-                 maxiter = 1000, 
+                 optimizer = 'SLSQP',
+                 optimizer_options = {'maxiter': 100000}, 
                  regopt = 'OLS',
                  center = 'mean',
                  center_data=True,
@@ -98,8 +105,8 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         self.n_components = n_components
         self.trimming = trimming
         self.alpha = alpha
-        self.ndir = ndir
-        self.maxiter = maxiter
+        self.optimizer = optimizer
+        self.optimizer_options = optimizer_options
         self.regopt = regopt
         self.center = center
         self.center_data = center_data
@@ -117,171 +124,6 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         self.licenter = ['mean','median']
         if not(self.center in self.licenter):
             raise(ValueError('Only location estimator classes allowed are: "mean", "median"'))
-            
-            
-    def _gridplane(self,X,pi_arguments={},**kwargs):
-
-        """
-        Function for grid search in a plane in two dimensions
-        
-        Required: X, np.matrix(n,2), data 
-        
-        Optional keyword arguments: 
-            
-            y, np.matrix(n,1), second block of data 
-            biascorr, to apply bias correction at normal distribution 
-            
-        pi_arguments is a dict of arguments passed on to the projection index
-            
-        Values: 
-            wi, np.matrix(p,1): optimal direction 
-            maximo, float: optimal value of projection index
-            
-        Note: this function is writte to be called from within the ppdire class
-        
-        """
-        
-                
-        if (('biascorr' not in kwargs) and ('biascorr' not in pi_arguments)):
-            biascorr = False
-        else:
-            biascorr = kwargs.get('biascorr')
-            
-        if len(pi_arguments) == 0:
-            
-            pi_arguments = {
-                            'alpha': self.alpha,
-                            'ndir': self.ndir,
-                            'trimming': self.trimming,
-                            'biascorr': biascorr, 
-                            'dmetric' : 'euclidean'
-                            }
-        else:
-            pi_arguments['alpha'] = self.alpha
-            pi_arguments['trimming'] = self.trimming
-            
-        if ('y' in kwargs):
-            y = kwargs.pop('y')
-            pi_arguments['y'] = y
-            
-        optmax = kwargs.pop('optmax',self.optrange[1])
-        
-        alphamat = kwargs.pop('alphamat',None)
-        if (alphamat != None).all():
-            optrange = np.sign(self.optrange)
-            stop0s = np.arcsin(optrange[0])
-            stop1s = np.arcsin(optrange[1])
-            stop1c = np.arccos(optrange[0])
-            stop0c = np.arccos(optrange[1])
-            anglestart = max(stop0c,stop0s)
-            anglestop = max(stop1c,stop1s)
-            nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=False)            
-            alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
-            if optmax != 1:
-                alphamat *= optmax
-        
-        tj = X*alphamat
-        if self.square_pi:
-            meas = [self.most.fit(tj[:,i],**pi_arguments)**2 
-            for i in np.arange(0,self.ndir)]
-        else:
-            meas = [self.most.fit(tj[:,i],**pi_arguments) 
-            for i in np.arange(0,self.ndir)]
-            
-        maximo = np.max(meas)
-        indmax = np.where(meas == maximo)[0]
-        if len(indmax)>0:
-            indmax = indmax[0]
-        wi = alphamat[:,indmax]
-        
-        
-        if (alphamat != None).all():
-            setattr(self,'_stop0c',stop0c)
-            setattr(self,'_stop0s',stop0s)
-            setattr(self,'_stop1c',stop1c)
-            setattr(self,'_stop1s',stop1s)
-            setattr(self,'optmax',optmax)
-        
-        return(wi,maximo)
-        
-        
-    
-    def _gridplane_2(self,X,q,div,pi_arguments={},**kwargs):
-    
-        """
-        Function for refining a grid search in a plane in two dimensions
-        
-        Required: X, np.matrix(n,2), data 
-                  q, np.matrix(1,1), last obtained suboptimal direction component
-                  div, float, number of subsegments to divide angle into
-        
-        Optional keyword arguments: 
-            
-            y, np.matrix(n,1), second block of data 
-            biascorr, to apply bias correction at normal distribution 
-            
-        pi_arguments is a dict of arguments passed on to the projection index
-            
-        Values: 
-            wi, np.matrix(p,1): optimal direction 
-            maximo, float: optimal value of projection index
-            
-        Note: this function is writte to be called from within the ppdire class
-        
-        """
-                
-        if (('biascorr' not in kwargs) and ('biascorr' not in pi_arguments)):
-            biascorr = False
-        else:
-            biascorr = kwargs.get('biascorr')
-            
-        if len(pi_arguments) == 0:
-            
-            pi_arguments = {
-                            'alpha': self.alpha,
-                            'ndir': self.ndir,
-                            'trimming': self.trimming,
-                            'biascorr': biascorr, 
-                            'dmetric' : 'euclidean'
-                            }
-        else:
-            pi_arguments['alpha'] = self.alpha
-            pi_arguments['trimming'] = self.trimming
-            
-        if 'y' in kwargs:
-            y = kwargs.pop('y')
-            pi_arguments['y'] = y
-    
-        optmax = kwargs.pop('optmax',self.optrange[1])
-       
-        alphamat = kwargs.pop('alphamat',None)
-        if (alphamat != None).all():
-            anglestart = min(self._stop0c,self._stop0s)
-            anglestop = min(self._stop1c,self._stop1s)
-            nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=True)
-            alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
-            if self.optmax != 1:
-                alphamat *= self.optmax
-        alpha1 = alphamat
-        divisor = np.sqrt(1 + 2*np.multiply(alphamat[0,:],alphamat[1,:])*q[0])
-        alpha1 = np.divide(alphamat,np.repeat(divisor,2,0))
-        tj = X*alpha1
-        
-        if self.square_pi:
-            meas = [self.most.fit(tj[:,i],**pi_arguments)**2 
-            for i in np.arange(0,self.ndir)]
-        else:
-            meas = [self.most.fit(tj[:,i],**pi_arguments) 
-            for i in np.arange(0,self.ndir)]
-
-        maximo = np.max(meas)
-        indmax = np.where(meas == maximo)[0]
-        if len(indmax)>0:
-            indmax = indmax[0]
-        wi = alpha1[:,indmax]
-        
-        return(wi,maximo)
-    
     
 
     def fit(self,X,*args,**kwargs):
@@ -408,7 +250,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         if self.whiten_data:
             self.center_data = True
             self.scale_data = False
-            compression = False
+            self.compression = False
             print('All results produced are for whitened data')
         
         # Centring and scaling
@@ -503,154 +345,192 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         f = ys
 
         bi = np.zeros((p,1))
-            
-        # Define grid optimization ranges 
-        optrange = np.sign(self.optrange)
-        optmax = self.optrange[1]
-        stop0s = np.arcsin(optrange[0])
-        stop1s = np.arcsin(optrange[1])
-        stop1c = np.arccos(optrange[0])
-        stop0c = np.arccos(optrange[1])
-        anglestart = max(stop0c,stop0s)
-        anglestop = max(stop1c,stop1s)
-        nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=False)            
-        alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
-        if optmax != 1:
-            alphamat *= optmax
-        setattr(self,'_stop0c',stop0c)
-        setattr(self,'_stop0s',stop0s)
-        setattr(self,'_stop1c',stop1c)
-        setattr(self,'_stop1s',stop1s)
-        setattr(self,'optmax',optmax)
         
-        if p>2:
-            anglestart = min(self._stop0c,self._stop0s)
-            anglestop = min(self._stop1c,self._stop1s)
-            nangle = np.linspace(anglestart,anglestop,self.ndir,endpoint=True)
-            alphamat2 = np.matrix([np.cos(nangle), np.sin(nangle)])
-            if self.optmax != 1:
-                alphamat2 *= self.optmax
+        opt_args = { 
+                    'alpha': self.alpha,
+                    'trimming': self.trimming,
+                    'biascorr': biascorr, 
+                    'dmetric' : 'euclidean',
+                    }
+        
+        if self.optimizer=='grid':
+            # Define grid optimization ranges
+            if 'ndir' not in self.optimizer_options:
+                self.optimizer_options['ndir'] = 1000
+            optrange = np.sign(self.optrange)
+            optmax = self.optrange[1]
+            stop0s = np.arcsin(optrange[0])
+            stop1s = np.arcsin(optrange[1])
+            stop1c = np.arccos(optrange[0])
+            stop0c = np.arccos(optrange[1])
+            anglestart = max(stop0c,stop0s)
+            anglestop = max(stop1c,stop1s)
+            nangle = np.linspace(anglestart,anglestop,self.optimizer_options['ndir'],endpoint=False)            
+            alphamat = np.matrix([np.cos(nangle), np.sin(nangle)])
+            opt_args['_stop0c'] = stop0c
+            opt_args['_stop0s'] = stop0s
+            opt_args['_stop1c'] = stop1c
+            opt_args['_stop1s'] = stop1s
+            opt_args['optmax'] = optmax
+            opt_args['optrange'] = self.optrange
+            opt_args['square_pi'] = self.square_pi
+            if optmax != 1:
+                alphamat *= optmax
+        
+            if p>2:
+                anglestart = min(opt_args['_stop0c'],opt_args['_stop0s'])
+                anglestop = min(opt_args['_stop1c'],opt_args['_stop1s'])
+                nangle = np.linspace(anglestart,anglestop,self.optimizer_options['ndir'],endpoint=True)
+                alphamat2 = np.matrix([np.cos(nangle), np.sin(nangle)])
+                if optmax != 1:
+                    alphamat2 *= opt_args['optmax']
                 
-        # Arguments for grid plane
-        grid_args = { 
-                     'alpha': self.alpha,
-                     'alphamat': alphamat,
-                     'ndir': self.ndir,
-                     'trimming': self.trimming,
-                     'biascorr': biascorr, 
-                     'dmetric' : 'euclidean'
-                     }
-        if flag=='two-block':
-            grid_args['y'] = f
+            # Arguments for grid plane
+            opt_args['alphamat'] = alphamat,
+            opt_args['ndir'] = self.optimizer_options['ndir'],
+            opt_args['maxiter'] = self.optimizer_options['maxiter']
+            if type(opt_args['ndir'] is tuple): 
+                opt_args['ndir'] = opt_args['ndir'][0]
             
-         # Arguments for grid plane #2
-        grid_args_2 = { 
+            # Arguments for grid plane #2
+            grid_args_2 = { 
                      'alpha': self.alpha,
                      'alphamat': alphamat2,
-                     'ndir': self.ndir,
+                     'ndir': self.optimizer_options['ndir'],
                      'trimming': self.trimming,
                      'biascorr': biascorr, 
-                     'dmetric' : 'euclidean'
+                     'dmetric' : 'euclidean',
+                     '_stop0c' : stop0c,
+                     '_stop0s' : stop0s,
+                     '_stop1c' : stop1c,
+                     '_stop1s' : stop1s,
+                     'optmax' : optmax,
+                     'optrange' : self.optrange,
+                     'square_pi' : self.square_pi
                      }
+            if flag=='two-block':
+                grid_args_2['y'] = f
+        
         if flag=='two-block':
-            grid_args_2['y'] = f
+            opt_args['y'] = f
             
 
         # Itertive coefficient estimation
         for i in range(0,h):
 
-            if p==2:
-                wi,maximo = self._gridplane(E,
-                                            pi_arguments=fit_arguments,
-                                            **grid_args
-                                            )
+            if self.optimizer=='grid':
+                if p==2:
+                    wi,maximo = gridplane(E,self.most,
+                                          pi_arguments=opt_args
+                                          )
            
-            elif p>2:
+                elif p>2:
                 
-                afin = np.zeros((p,1)) # final parameters for linear combinations
-                Z = copy.deepcopy(E)
-                # sort variables according to criterion
-                meas = [self.most.fit(E[:,k],
-                            **grid_args) 
+                    afin = np.zeros((p,1)) # final parameters for linear combinations
+                    Z = copy.deepcopy(E)
+                    # sort variables according to criterion
+                    meas = [self.most.fit(E[:,k],
+                            **opt_args) 
                             for k in np.arange(0,p)]
-                if self.square_pi:
-                    meas = np.square(meas)
-                wi,maximo = self._gridplane(Z[:,0:2],**grid_args)
-                Zopt = Z[:,0:2]*wi 
-                afin[0:2]=wi
-                for j in np.arange(2,p):
-                    projmat = np.matrix([np.array(Zopt[:,0]).reshape(-1),
-                                         np.array(Z[:,j]).reshape(-1)]).T
-                    wi,maximo = self._gridplane(projmat,
-                                                **grid_args
-                                                )
-                    Zopt = Zopt*float(wi[0]) + Z[:,j]*float(wi[1])
-                    afin[0:(j+1)] = afin[0:(j+1)]*float(wi[0])
-                    afin[j] = float(wi[1])
-
-                tj = Z*afin
-                objf = self.most.fit(tj,
-                                     **{**fit_arguments,**grid_args}
-                                    )
-                if self.square_pi:
-                    objf *= objf
-    
-
-                # outer loop to run until convergence
-                objfold = copy.deepcopy(objf)
-                objf = -1000
-                afinbest = afin
-                ii = 0
-                maxiter_2j = 2**round(np.log2(self.maxiter)) 
-                
-                while ((ii < self.maxiter+1) and (abs(objfold - objf)/abs(objf) > 1e-4)):
-                    for j in np.arange(0,p):
+                    if self.square_pi:
+                        meas = np.square(meas)
+                    wi,maximo = gridplane(Z[:,0:2],self.most,opt_args)
+                    Zopt = Z[:,0:2]*wi 
+                    afin[0:2]=wi
+                    for j in np.arange(2,p):
                         projmat = np.matrix([np.array(Zopt[:,0]).reshape(-1),
                                          np.array(Z[:,j]).reshape(-1)]).T
-                        if j > 16:
-                            divv = maxiter_2j
-                        else:
-                            divv = min(2**j,maxiter_2j)
-                        
-                        wi,maximo = self._gridplane_2(projmat,
-                                                      q=afin[j],
-                                                      div=divv,
-                                                      **grid_args_2
-                                                      )
-                        Zopt = Zopt*float(wi[0,0]) + Z[:,j]*float(wi[1,0])
-                        afin *= float(wi[0,0])
-                        afin[j] += float(wi[1,0])
-                        
-                    # % evaluate the objective function:
+                        wi,maximo = gridplane(projmat,self.most,
+                                              opt_args
+                                              )
+                        Zopt = Zopt*float(wi[0]) + Z[:,j]*float(wi[1])
+                        afin[0:(j+1)] = afin[0:(j+1)]*float(wi[0])
+                        afin[j] = float(wi[1])
+
                     tj = Z*afin
-                    
-                    objfold = copy.deepcopy(objf)
                     objf = self.most.fit(tj,
-                                         q=afin,
-                                         **grid_args
-                                         )
+                                     **{**fit_arguments,**opt_args}
+                                    )
                     if self.square_pi:
                         objf *= objf
-                    
-                    if  objf!=objfold:
-                        if self.constraint == 'norm':
-                            afinbest = afin/np.sqrt(np.sum(np.square(afin)))
-                        else:
-                            afinbest = afin
-                            
-                    ii +=1
-                    if self.verbose:
-                        print(str(ii))
-                #endwhile
-                
-                afinbest = afin
-                wi = np.zeros((p,1))
-                wi = afinbest
-                Maxobjf[i] = objf
-            # endif;%if p>2;
+    
 
+                    # outer loop to run until convergence
+                    objfold = copy.deepcopy(objf)
+                    objf = -1000
+                    afinbest = afin
+                    ii = 0
+                    maxiter_2j = 2**round(np.log2(self.optimizer_options['maxiter'])) 
+                
+                    while ((ii < self.optimizer_options['maxiter'] + 1) and (abs(objfold - objf)/abs(objf) > 1e-4)):
+                        for j in np.arange(0,p):
+                            projmat = np.matrix([np.array(Zopt[:,0]).reshape(-1),
+                                         np.array(Z[:,j]).reshape(-1)]).T
+                            if j > 16:
+                                divv = maxiter_2j
+                            else:
+                                divv = min(2**j,maxiter_2j)
+                        
+                            wi,maximo = gridplane_2(projmat,
+                                                    self.most,
+                                                    q=afin[j],
+                                                    div=divv,
+                                                    pi_arguments=grid_args_2
+                                                    )
+                            Zopt = Zopt*float(wi[0,0]) + Z[:,j]*float(wi[1,0])
+                            afin *= float(wi[0,0])
+                            afin[j] += float(wi[1,0])
+                        
+                        # % evaluate the objective function:
+                        tj = Z*afin
+                    
+                        objfold = copy.deepcopy(objf)
+                        objf = self.most.fit(tj,
+                                         q=afin,
+                                         **opt_args
+                                         )
+                        if self.square_pi:
+                            objf *= objf
+                    
+                        if  objf!=objfold:
+                            if self.constraint == 'norm':
+                                afinbest = afin/np.sqrt(np.sum(np.square(afin)))
+                            else:
+                                afinbest = afin
+                            
+                        ii +=1
+                        if self.verbose:
+                            print(str(ii))
+                    #endwhile
+                
+                    afinbest = afin
+                    wi = np.zeros((p,1))
+                    wi = afinbest
+                    Maxobjf[i] = objf
+                # endif;%if p>2;
+            else: # do not optimize by the grid algorithm
+                if self.trimming > 0: 
+                    warnings.warn('Optimization that involves a trimmed objective is not a quadratic program. The scipy-optimize result will be off!!')
+                if 'center' in self.pi_arguments:
+                    if (self.pi_arguments['center']=='median'): 
+                        warnings.warn('Optimization that involves a median in the objective is not a quadratic program. The scipy-optimize result will be off!!')   
+                constraint = {'type':'eq',
+                              'fun': lambda x: np.linalg.norm(x) -1,
+                              }
+                wi = minimize(dicomo_max,
+                              E[0,:].transpose(),
+                              args=(self.most,E,opt_args),
+                              method=self.optimizer,
+                              constraints=constraint,
+                              options=self.optimizer_options).x
+                wi = np.matrix(wi).reshape((p,1))
+                wi /= np.sqrt(np.sum(np.square(wi)))
+                
+                
             # Computing projection weights and scores
             ti = E*wi
+            if self.optimizer != 'grid':
+                Maxobjf[i] = self.most.fit(E*wi,**opt_args)
             nti = np.linalg.norm(ti)
             pi = E.T*ti / (nti**2)
             if self.whiten_data:
@@ -666,7 +546,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             
             if flag != 'one-block':
                 criteval = self.most.fit(E*wi0,
-                                         **grid_args
+                                         **opt_args
                                          )
                 if self.square_pi:
                     criteval *= criteval
@@ -874,3 +754,4 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             valid_params[key].set_params(**sub_params)
     
         return self
+        
