@@ -307,7 +307,7 @@ of projection indices, it can be computationally demanding. For flat data tables
 a workaround has been built in.  
 
         # Load flat data 
-        datan = ps.read_csv("./ppdire/data/Glass_df.csv")
+        datan = ps.read_csv("./data/Glass_df.csv")
         X = datan.values[:,100:300]
         y = datan.values[:,2]
         
@@ -320,6 +320,7 @@ a workaround has been built in.
                     compression = False, 
                     optimizer='grid',
                     optimizer_options={'ndir':1000,'maxiter':1000})
+        rcr.fit(X,y)
         rcr.coef_
         
         rcr = ppdire(projection_index = dicomo, 
@@ -330,6 +331,7 @@ a workaround has been built in.
                     compression = True, 
                     optimizer='grid',
                     optimizer_options={'ndir':1000,'maxiter':1000})
+        rcr.fit(X,y)
         rcr.coef_
         
 However, compression will not work properly if the data contain several low scale 
@@ -365,6 +367,7 @@ Now calculate some moments and compare them to `numpy`:
         # MAD  
         import statsmodels.robust as srs
         covest.set_params(center='median')
+        covest.fit(x)
         srs.mad(x)
         
         # 4th Moment 
