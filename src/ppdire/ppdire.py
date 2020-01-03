@@ -26,7 +26,7 @@ import warnings
 from .dicomo import dicomo 
 from ._dicomo_utils import * 
 from .capi import capi
-from ._ppdire_utils import gridplane, gridplane_2, dicomo_max
+from ._ppdire_utils import gridplane, gridplane_2, pp_objective
 import inspect
 
 class MyException(Exception):
@@ -37,15 +37,15 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
     """
     PPDIRE Projection Pursuit Dimension Reduction
     
-    The projection pursuit algorithm implemented here is the grid algorithm, 
-    first outlined in: 
-        
-        Filzmoser, P., Serneels, S., Croux, C. and Van Espen, P.J., 
-        Robust multivariate methods: The projection pursuit approach,
-        in: From Data and Information Analysis to Knowledge Engineering,
-        Spiliopoulou, M., Kruse, R., Borgelt, C., Nuernberger, A. and Gaul, W., eds., 
-        Springer Verlag, Berlin, Germany,
-        2006, pages 270--277.
+    The class allows for calculation of the projection pursuit optimization
+    either through `scipy.optimize` or through the grid algorithm, native to this
+    package. The class provides a very flexible way to access optimization of 
+    projection indices that can lead to either classical or robust dimension
+    reduction. Optimization through scipy.optimize is much more efficient, yet 
+    it will only provide correct results for classical projection indices. The
+    native grid algorithm should be used when the projection index involves 
+    order statistics of any kind, such as ranks, trimming, winsorizing, or 
+    empirical quantiles.  
         
     Input parameters to class: 
         projection_index: function or class. dicomo and capi supplied in this
@@ -76,6 +76,16 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         copy: bool. Whether to make a deep copy of the input data or not. 
         verbose: bool. Set to True prints the iteration number. 
         return_scaling_object: bool. 
+        
+    The grid optimization algorithm for projection pursuit implemented here, 
+    was outlined in: 
+        
+        Filzmoser, P., Serneels, S., Croux, C. and Van Espen, P.J., 
+        Robust multivariate methods: The projection pursuit approach,
+        in: From Data and Information Analysis to Knowledge Engineering,
+        Spiliopoulou, M., Kruse, R., Borgelt, C., Nuernberger, A. and Gaul, W., eds., 
+        Springer Verlag, Berlin, Germany,
+        2006, pages 270--277.
         
     The 'fit' function will take a set of optional input arguments. 
     
@@ -517,7 +527,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 constraint = {'type':'eq',
                               'fun': lambda x: np.linalg.norm(x) -1,
                               }
-                wi = minimize(dicomo_max,
+                wi = minimize(pp_objective,
                               E[0,:].transpose(),
                               args=(self.most,E,opt_args),
                               method=self.optimizer,

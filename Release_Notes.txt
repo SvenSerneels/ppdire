@@ -1,0 +1,7 @@
+﻿Release Notes.
+
+Version 0.0: initial release, only grid optimization 
+
+Version 0.1: 
+- option to use scipy-optimize optimization or grid algorithm
+- grid utility functions moved to _ppdire_utils.py

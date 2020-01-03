@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jul 10 14:37:56 2019
+Created on Thu Jan 2 2020
 
-@author: sven
+@author: Sven Serneels, Ponalytics. 
 """
 
 import numpy as np
 
-def dicomo_max(x,est,X,opt_args): #works
+def pp_objective(x,est,X,opt_args):
+    
+    """
+    Optimization objective for ppdire 
+    
+    """
     
     n = len(x)
     x = np.matrix(x).reshape((n,1))
@@ -19,20 +24,23 @@ def gridplane(X,most,pi_arguments={},**kwargs):
     """
     Function for grid search in a plane in two dimensions
     
-    Required: X, np.matrix(n,2), data 
-    
-    Optional keyword arguments: 
+    Required: X, np.matrix(n,2), data, 
+              most, class object, projection index. Designed for 
+                  dicomo or capi classes.
+    Optional: pi_arguments, dict: arguments to pass on to projection index, 
+                    plus a few local arguments such as optrange and square_pi
+                    (see ppdire for explanation)
         
-        y, np.matrix(n,1), second block of data 
-        biascorr, to apply bias correction at normal distribution 
+              y, np.matrix(n,1), second block of data 
+              biascorr, to apply bias correction at normal distribution 
+              alphamat, np.matrix: matrix of alpha angles to be scanned. 
         
-    pi_arguments is a dict of arguments passed on to the projection index
         
     Values: 
         wi, np.matrix(p,1): optimal direction 
         maximo, float: optimal value of projection index
         
-    Note: this function is writte to be called from within the ppdire class
+    Note: this function is written exclusively to be called from within the ppdire class
     
     """
     
@@ -99,14 +107,19 @@ def gridplane_2(X,most,q,div,pi_arguments={},**kwargs):
     """
     Function for refining a grid search in a plane in two dimensions
     
-    Required: X, np.matrix(n,2), data 
+    Required: X, np.matrix(n,2), data
+              most, class object, projection index. Designed for 
+                  dicomo or capi classes.
               q, np.matrix(1,1), last obtained suboptimal direction component
               div, float, number of subsegments to divide angle into
     
-    Optional keyword arguments: 
+    Optional: pi_arguments, dict: arguments to pass on to projection index, 
+                    plus a few local arguments such as optrange and square_pi
+                    (see ppdire for explanation)
         
-        y, np.matrix(n,1), second block of data 
-        biascorr, to apply bias correction at normal distribution 
+              y, np.matrix(n,1), second block of data 
+              biascorr, to apply bias correction at normal distribution 
+              alphamat, np.matrix: matrix of alpha angles to be scanned. 
         
     pi_arguments is a dict of arguments passed on to the projection index
         
@@ -114,7 +127,7 @@ def gridplane_2(X,most,q,div,pi_arguments={},**kwargs):
         wi, np.matrix(p,1): optimal direction 
         maximo, float: optimal value of projection index
         
-    Note: this function is writte to be called from within the ppdire class
+    Note: this function is written to be called from within the ppdire class
     
     """
             

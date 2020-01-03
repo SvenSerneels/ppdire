@@ -18,6 +18,14 @@ class capi(_BaseComposition,BaseEstimator):
     """
     CAPI Co-moment analysis projection index
     
+    The CAPI projection index to estimate generalized betas was first introduced
+    in: 
+    
+    S. Serneels, Projection pursuit based generalized betas accounting for 
+    higher order co-moment effects in financial market analysis,  in: 
+    JSM Proceedings, Business and Economic Statistics Section. 
+    Alexandria, VA: American Statistical Association, 2019, 3009-3035.
+    
     Class arguments 
     
     max_degree, int: maxmimal degree of co-moments to be used. In [2,3,4]. 

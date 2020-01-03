@@ -4,7 +4,6 @@ Projection Pursuit Dimension Reduction
 A scikit-learn compatible Python 3 package for Projection Pursuit Dimension Reduction. 
 This class implements a very general framweork for projection pursuit, giving access to 
 methods ranging from PP-PCA to CAPI generalized betas.  
-The package uses the grid algorithm\[1\], the most numerically stable and accurate PP algorithm. 
 
 Description
 -----------
@@ -21,18 +20,26 @@ included into the package as two ancillary classes:
 When using the `dicomo` class as a plugin, several well-known multivariate dimension reduction techniques 
 are accessible, as well as robust alternatives thereto. For more details, see the Example below. 
 
+The `ppdire` class allows for calculation of the projection pursuit optimization either 
+through `scipy.optimize` or through the native grid\[1\] algorithm. Optimization through 
+`scipy.optimize` is much more efficient, yet it will only provide correct results 
+for classical projection indices. The native grid algorithm should be used when 
+the projection index involves order statistics of any kind, such as ranks, trimming, 
+winsorizing, or empirical quantiles.
+
 Remarks: 
 - all the methods contained in this package have been designed for continuous data. They do not work correctly for categorical or textual data.
 - this package focuses on projection pursuit dimension reduction. Regression methods that involve a dimension reduction step can be accessed through it 
   (e.g. PCR, PLS, RCR, ...), yet the package does not provide an implementation for projection pursuit regression (PPR). To access PPR, we refer to 
   the `projection-pursuit` package, also distributed through PIP.    
         
-The code is aligned to ScikitLearn, such that modules such as GridSearchCV can flawlessly be applied to it. 
+The code is aligned to ScikitLearn, such that modules such as `GridSearchCV` can flawlessly be applied to it. 
 
 The repository contains
 - The estimator (`ppdire.py`) 
 - A class to estimate co-moments (`dicomo.py`)
 - A class for the co-moment analysis projection index (`capi.py`)
+- Ancillary functions for projection pursuit (`_ppdire_utils.py`)
 - Ancillary functions for co-moment estimation (`_dicomo_utils.py`)
 
 Note: 
@@ -49,17 +56,18 @@ The ppdire class
 
 Dependencies
 ------------
-- From <sklearn.base>: BaseEstimator,TransformerMixin,RegressorMixin
-- From <sklearn.utils>: _BaseComposition
-- copy
-- <scipy.stats>:
-- From <scipy.linalg>: pinv2
-- numpy 
-- From <statsmodels.regression.quantile_regression>: QuantReg
-- From <sklearn.utils.extmath>: svd_flip
-- From <sprm>: rm, robcent
-- From <sprm._m_support_functions>: MyException
-- warnings
+- From `sklearn.base`: `BaseEstimator`,`TransformerMixin`,`RegressorMixin`
+- From `sklearn.utils`: `_BaseComposition`
+- `copy`
+- `scipy.stats`
+- From `scipy.linalg`: `pinv2`
+- From `scipy.optimize`: `minimize`
+- `numpy` 
+- From `statsmodels.regression.quantile_regression`: `QuantReg`
+- From `sklearn.utils.extmath`: `svd_flip`
+- From `sprm`: `rm`, `robcent`
+- From `sprm._m_support_functions`: `MyException`
+- `warnings`
 
 
 Parameters
@@ -71,9 +79,14 @@ Parameters
 - `n_components`, int. number of components to be estimated 
 - `trimming`, float. trimming percentage for projection index, to be entered as pct/100 
 - `alpha`, float. Continuum coefficient. Only relevant if `ppdire` is used to 
-            estimate (classical or robust) continuum regression.  
-- `ndir`, int. Number of directions to calculate per iteration.
-- `maxiter`, int. Maximal number of iterations.
+            estimate (classical or robust) continuum regression. 
+- `optimizer`: str. Presently: either `'grid'` (native optimizer) or 
+            any of the options in `scipy-optimize` (e.g. `'SLSQP'`)
+- `optimizer_options`: dict with options to pass on to the optimizer. 
+            If `optimizer == 'grid'`,
+   * `ndir`: int: Number of directions to calculate per iteration.
+   * `maxiter`: int. Maximal number of iterations. 
+
 - `regopt`, str. Regression option for regression step y~T. Can be set
                 to `'OLS'` (default), `'robust'` (will run `sprm.rm`) or `'quantile'` 
                 (`statsmodels.regression.quantreg`). 
@@ -181,23 +194,36 @@ PCA and PLS. This makes it easy to verify that the algorithm is correct.
         skpca.fit(Xs)
         skpca.components_.T # sklearn outputs loadings as rows ! 
         
-        # PP-PCA  
+        # PP-PCA through SLSQP
         from ppdire import dicomo, ppdire
-        pppca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var'}, n_components=4)
+        pppca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var'}, n_components=4, optimizer='SLSQP')
+        pppca.fit(X)
+        pppca.x_loadings_
+        
+        # Grid PP-PCA  
+        pppca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var'}, n_components=4, optimizer='grid',optimizer_options={'ndir':1000,'maxiter':1000})
         pppca.fit(X)
         pppca.x_loadings_
         
 - Likewise, projection pursuit as a slow, approximate way to compute PLS. Compare: 
 
         # PLS ex Scikit-Learn 
+        import sklearn.cross_decomposition as skc
         skpls = skc.PLSRegression(n_components=4)
         skpls.fit(Xs,(y-np.mean(y))/np.std(y))
         skpls.x_scores_
         skpls.coef_ 
         Xs*skpls.coef_*np.std(y) + np.mean(y) 
         
-        # PP-PLS 
-        pppls = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'cov'}, n_components=4, square_pi=True)
+        # PP-PLS through SLSQP
+        pppls = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'cov'}, n_components=4, square_pi=True, optimizer='SLSQP', optimizer_options={'maxiter':500})
+        pppls.fit(X,y)
+        pppls.x_scores_
+        pppls.coef_scaled_ # Column 4 should agree with skpls.coef_
+        pppls.fitted_  
+        
+        # Grid PP-PLS 
+        pppls = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'cov'}, n_components=4, square_pi=True, optimizer='grid',optimizer_options={'ndir':1000,'maxiter':1000})
         pppls.fit(X,y)
         pppls.x_scores_
         pppls.coef_scaled_ # Column 4 should agree with skpls.coef_
@@ -216,7 +242,7 @@ Robust projection pursuit estimators
 
 - Robust PCA based on the Median Absolute Deviation (MAD) \[3\]. 
         
-        lcpca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var', 'center': 'median'}, n_components=4)
+        lcpca = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'var', 'center': 'median'}, n_components=4, optimizer='grid',optimizer_options={'ndir':1000,'maxiter':1000})
         lcpca.fit(X)
         lcpca.x_loadings_
         # To extend to Robust PCR, just add y 
@@ -224,7 +250,7 @@ Robust projection pursuit estimators
         
 - Robust Continuum Regression \[4\] based on trimmed (co)variance: 
 
-        rcr = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'continuum'}, n_components=4, trimming=.1, alpha=.5)
+        rcr = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'continuum'}, n_components=4, trimming=.1, alpha=.5, optimizer='grid',optimizer_options={'ndir':1000,'maxiter':1000})
         rcr.fit(X,y=y,ndir=1000,regopt='robust')
         rcr.x_loadings_
         rcr.x_scores_
@@ -234,6 +260,9 @@ Robust projection pursuit estimators
 Remark: for RCR, the continuum parameter `alpha` tunes the result from multiple 
 regression (`alpha` -> 0) via PLS (`alpha` = 1) to PCR (`alpha` -> Inf). Of course, 
 the robust PLS option can also be accessed through `pi_arguments = {'mode' : 'cov'}, trimming=.1`. 
+
+Remark 2: for these robust options, please do not use SLSQP. The resuslts will 
+be wrong.
 
 
 Projection pursuit generalized betas
@@ -255,7 +284,11 @@ Cross-validating through `scikit-learn`
 
         from sklearn.model_selection import GridSearchCV
         rcr_cv = GridSearchCV(ppdire(projection_index=dicomo, 
-                                    pi_arguments = {'mode' : 'continuum'}), 
+                                    pi_arguments = {'mode' : 'continuum', 
+                                                    'optimizer':'grid',
+                                                    'optimizer_options':{'ndir':1000,'maxiter':1000}
+                                                    }
+                                    ), 
                               cv=10, 
                               param_grid={"n_components": [1, 2, 3], 
                                           "alpha": np.arange(.1,3,.3).tolist(),
@@ -284,7 +317,9 @@ a workaround has been built in.
                     n_components=4, 
                     trimming=.1, 
                     alpha=.5, 
-                    compression = False)
+                    compression = False, 
+                    optimizer='grid',
+                    optimizer_options={'ndir':1000,'maxiter':1000})
         rcr.coef_
         
         rcr = ppdire(projection_index = dicomo, 
@@ -292,7 +327,9 @@ a workaround has been built in.
                     n_components=4, 
                     trimming=.1, 
                     alpha=.5, 
-                    compression = True)
+                    compression = True, 
+                    optimizer='grid',
+                    optimizer_options={'ndir':1000,'maxiter':1000})
         rcr.coef_
         
 However, compression will not work properly if the data contain several low scale 
@@ -371,7 +408,8 @@ References
         Spiliopoulou, M., Kruse, R., Borgelt, C., Nuernberger, A. and Gaul, W., eds., 
         Springer Verlag, Berlin, Germany,
         2006, pages 270--277.
-2. [Projection pursuit based generalized betas accounting for higher order co-moment effects in financial market analysis](https://arxiv.org/pdf/1908.00141.pdf), Sven Serneels, arXiv preprint 1908.00141, 2019. 
+2. [Projection pursuit based generalized betas accounting for higher order co-moment effects in financial market analysis](https://arxiv.org/pdf/1908.00141.pdf), Sven Serneels, in: 
+        JSM Proceedings, Business and Economic Statistics Section. Alexandria, VA: American Statistical Association, 2019, 3009-3035.
 3. Robust principal components and dispersion matrices via projection pursuit, Chen, Z. and Li, G., Research Report, Department of Statistics, Harvard University, 1981.
 4. [Robust Continuum Regression](https://www.sciencedirect.com/science/article/abs/pii/S0169743904002667), Sven Serneels, Peter Filzmoser, Christophe Croux, Pierre J. Van Espen, Chemometrics and Intelligent Laboratory Systems, 76 (2005), 197-204.
 
@@ -380,7 +418,8 @@ References
 Work to do
 ----------
 - optimize alignment to `sklearn`
-- align to some of `sprm` plotting functions
+- integrate further with `sprm` plotting and preprocessing
+- make more flexible regarding data input types
 - optimize for speed 
 - extend to multivariate responses (open research topic !)
 - suggestions always welcome 
