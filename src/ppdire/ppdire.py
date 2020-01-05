@@ -276,13 +276,17 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
          # Data Compression for flat tables if required                
         if ((p>n) and self.compression):
             V,S,U = np.linalg.svd(X.T,full_matrices=False)
-            X = U.T*np.diag(S)
+            X = np.matmul(U.T,np.diag(S))
             n,p = X.shape
             
             if (srs.mad(X)==0).any(): 
                 warnings.warn('Due to low scales in data, compression would induce zero scales.' 
                               + '\n' + 'Proceeding without compression.')
                 dimensions = 0
+                if copy:
+                    X = copy.deepcopy(X0)
+                else:
+                    X = X0
             else:
                 dimensions = 1
         else:

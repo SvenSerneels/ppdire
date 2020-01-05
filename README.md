@@ -251,7 +251,7 @@ Robust projection pursuit estimators
 - Robust Continuum Regression \[4\] based on trimmed (co)variance: 
 
         rcr = ppdire(projection_index = dicomo, pi_arguments = {'mode' : 'continuum'}, n_components=4, trimming=.1, alpha=.5, optimizer='grid',optimizer_options={'ndir':1000,'maxiter':1000})
-        rcr.fit(X,y=y,ndir=1000,regopt='robust')
+        rcr.fit(X,y=y,regopt='robust')
         rcr.x_loadings_
         rcr.x_scores_
         rcr.coef_scaled_
@@ -284,10 +284,10 @@ Cross-validating through `scikit-learn`
 
         from sklearn.model_selection import GridSearchCV
         rcr_cv = GridSearchCV(ppdire(projection_index=dicomo, 
-                                    pi_arguments = {'mode' : 'continuum', 
-                                                    'optimizer':'grid',
-                                                    'optimizer_options':{'ndir':1000,'maxiter':1000}
-                                                    }
+                                    pi_arguments = {'mode' : 'continuum'
+                                                    }, 
+                                    optimizer = 'grid',
+                                    optimizer_options = {'ndir':1000,'maxiter':1000}
                                     ), 
                               cv=10, 
                               param_grid={"n_components": [1, 2, 3], 

@@ -5,3 +5,9 @@ Version 0.0: initial release, only grid optimization
 Version 0.1: 
 - option to use scipy-optimize optimization or grid algorithm
 - grid utility functions moved to _ppdire_utils.py
+
+Version 0.2: 
+- input flexibility created. ppdire now runs with numpy matrices, numpy arrays, as well 
+  as pandas DataFrames (or Series for y)  
+- flexibility created toward l1median centring
+- three bug fixes and updates to the documentation
