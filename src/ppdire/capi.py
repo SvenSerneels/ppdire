@@ -6,7 +6,7 @@ Created on Sun May 12 10:03:05 2019
 @author: Sven Serneels, Ponalytics.
 """
 
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, defaultdict
 from sklearn.utils.metaestimators import _BaseComposition
 from collections import defaultdict
 import inspect

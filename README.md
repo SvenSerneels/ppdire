@@ -33,7 +33,7 @@ Remarks:
   (e.g. PCR, PLS, RCR, ...), yet the package does not provide an implementation for projection pursuit regression (PPR). To access PPR, we refer to 
   the `projection-pursuit` package, also distributed through PIP.    
         
-The code is aligned to ScikitLearn, such that modules such as `GridSearchCV` can flawlessly be applied to it. 
+The code is aligned to `scikit-learn`, such that modules such as `GridSearchCV` can flawlessly be applied to it. 
 
 The repository contains
 - The estimator (`ppdire.py`) 
@@ -86,7 +86,8 @@ Parameters
             If `optimizer == 'grid'`,
    * `ndir`: int: Number of directions to calculate per iteration.
    * `maxiter`: int. Maximal number of iterations. 
-
+- `optimizer_constraints`: dict or list of dicts, further constraints to be
+            passed on to the optimizer function.
 - `regopt`, str. Regression option for regression step y~T. Can be set
                 to `'OLS'` (default), `'robust'` (will run `sprm.rm`) or `'quantile'` 
                 (`statsmodels.regression.quantreg`). 

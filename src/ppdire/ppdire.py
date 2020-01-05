@@ -18,7 +18,7 @@ from scipy.linalg import pinv2
 from scipy.optimize import minimize
 import copy
 from sklearn.utils.metaestimators import _BaseComposition
-from sklearn.base import RegressorMixin,BaseEstimator,TransformerMixin
+from sklearn.base import RegressorMixin,BaseEstimator,TransformerMixin, defaultdict
 from sklearn.utils.extmath import svd_flip
 from sprm import rm, robcent
 from sprm._m_support_functions import MyException
@@ -26,7 +26,8 @@ import warnings
 from .dicomo import dicomo 
 from ._dicomo_utils import * 
 from .capi import capi
-from ._ppdire_utils import gridplane, gridplane_2, pp_objective
+from ._ppdire_utils import *
+from sprm._preproc_utilities import scale_data
 import inspect
 
 class MyException(Exception):
@@ -62,6 +63,8 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             If optimizer == 'grid',
             ndir: int: Number of directions to calculate per iteration.
             maxiter: int. Maximal number of iterations.
+        optimizer_constraints: dict or list of dicts, further constraints to be
+            passed on to the optimizer function.
         regopt: str. regression option for regression step y~T. Can be set
                 to 'OLS' (default), 'robust' (will run sprm.rm) or 'quantile' 
                 (statsmodels.regression.quantreg). 
@@ -99,6 +102,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                  alpha = 1,
                  optimizer = 'SLSQP',
                  optimizer_options = {'maxiter': 100000}, 
+                 optimizer_constraints = {},
                  regopt = 'OLS',
                  center = 'mean',
                  center_data=True,
@@ -117,6 +121,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         self.alpha = alpha
         self.optimizer = optimizer
         self.optimizer_options = optimizer_options
+        self.optimizer_constraints = optimizer_constraints
         self.regopt = regopt
         self.center = center
         self.center_data = center_data
@@ -244,8 +249,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             self.X0 = X0
         else:
             X0 = X        
-        X0 = np.array(X0).astype('float64')    
-        X = X0
+        X = convert_X_input(X0)    
         n,p = X0.shape 
         trimming = self.trimming
         
@@ -267,7 +271,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         if self.scale_data:
             if self.center=='mean':
                 scale = 'std'
-            elif self.center=='median':
+            elif ((self.center=='median')|(self.center=='l1median')):
                 scale = 'mad' 
         else:
             scale = 'None'
@@ -282,15 +286,15 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             if (srs.mad(X)==0).any(): 
                 warnings.warn('Due to low scales in data, compression would induce zero scales.' 
                               + '\n' + 'Proceeding without compression.')
-                dimensions = 0
+                dimensions = False
                 if copy:
                     X = copy.deepcopy(X0)
                 else:
                     X = X0
             else:
-                dimensions = 1
+                dimensions = True
         else:
-            dimensions = 0
+            dimensions = False
         
         # Initiate centring object and scale X data 
         centring = robcent(center=self.center,scale=scale)      
@@ -319,6 +323,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         if flag != 'one-block':
             
             ny = y.shape[0]
+            y = convert_y_input(y)
             if len(y.shape) < 2:
                 y = np.matrix(y).reshape((ny,1))
 #            py = y.shape[1]
@@ -531,6 +536,8 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 constraint = {'type':'eq',
                               'fun': lambda x: np.linalg.norm(x) -1,
                               }
+                if len(self.optimizer_constraints)>0: 
+                    constraint = [constraint,self.optimizer_constraints]
                 wi = minimize(pp_objective,
                               E[0,:].transpose(),
                               args=(self.most,E,opt_args),
@@ -601,11 +608,11 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
 
         # Re-adjust estimates to original dimensions if data have been compressed 
         if dimensions:
-            B = V[:,0:p]*B
-            B_scaled = V[:,0:p]*B_scaled
-            R = V[:,0:p]*R
-            W = V[:,0:p]*W
-            P = V[:,0:p]*P
+            B = np.matmul(V[:,0:p],B)
+            B_scaled = np.matmul(V[:,0:p],B_scaled)
+            R = np.matmul(V[:,0:p],R)
+            W = np.matmul(V[:,0:p],W)
+            P = np.matmul(V[:,0:p],P)
             bi = B[:,h-1]
             if self.center_data:
                 Xs = centring.fit(X0,trimming=trimming)
@@ -619,11 +626,13 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         bi = bi.astype("float64")
         if flag != 'one-block':            
             # Calculate scaled and unscaled intercepts
+            if dimensions:
+                X = convert_X_input(X0)
             if(self.center == "mean"):
-                intercept = sps.trim_mean(y - np.matmul(X0,bi),trimming)
+                intercept = sps.trim_mean(y - np.matmul(X,bi),trimming)
             else:
-                intercept = np.median(np.reshape(y - np.matmul(X0,bi),(-1)))
-            yfit = np.matmul(X0,bi) + intercept
+                intercept = np.median(np.reshape(y - np.matmul(X,bi),(-1)))
+            yfit = np.matmul(X,bi) + intercept
             if not(scale == 'None'):
                 if (self.center == "mean"):
                     b0 = np.mean(ys - np.matmul(Xs.astype("float64"),bi))
@@ -672,6 +681,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
 
 
     def predict(self,Xn):
+        Xn = convert_X_input(Xn)
         (n,p) = Xn.shape
         (q,h) = self.coef_.shape
         if p!=q:
@@ -679,10 +689,11 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
         return(np.array(np.matmul(Xn,self.coef_[:,h-1]) + self.intercept_).T.reshape(-1))
         
     def transform(self,Xn):
+        Xn = convert_X_input(Xn)
         (n,p) = Xn.shape
         if p!= self.coef_.shape[0]:
             raise(ValueError('New data must have seame number of columns as the ones the model has been trained with'))
-        Xnc = self.scaling_object_.scale_data(Xn,self.x_loc_,self.x_sca_)
+        Xnc = scale_data(Xn,self.x_loc_,self.x_sca_)
         return(Xnc*self.x_rotations_)
         
     @classmethod   
