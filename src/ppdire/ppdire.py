@@ -20,14 +20,14 @@ import copy
 from sklearn.utils.metaestimators import _BaseComposition
 from sklearn.base import RegressorMixin,BaseEstimator,TransformerMixin, defaultdict
 from sklearn.utils.extmath import svd_flip
-from sprm import rm, robcent
-from sprm._m_support_functions import MyException
+from sprm import rm, VersatileScaler
+from sprm.sprm._m_support_functions import MyException
 import warnings
 from .dicomo import dicomo 
 from ._dicomo_utils import * 
 from .capi import capi
 from ._ppdire_utils import *
-from sprm._preproc_utilities import scale_data
+from sprm.preprocessing._preproc_utilities import scale_data
 import inspect
 
 class MyException(Exception):
@@ -297,10 +297,10 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             dimensions = False
         
         # Initiate centring object and scale X data 
-        centring = robcent(center=self.center,scale=scale)      
+        centring = VersatileScaler(center=self.center,scale=scale)      
   
         if self.center_data:
-            Xs = centring.fit(X,trimming=trimming)
+            Xs = centring.fit_transform(X,trimming=trimming)
             mX = centring.col_loc_
             sX = centring.col_sca_
         else:
@@ -334,7 +334,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 self.y0 = y0
                 
             if self.center_data:
-                ys = centring.fit(y,trimming=trimming)
+                ys = centring.fit_transform(y,trimming=trimming)
                 my = centring.col_loc_
                 sy = centring.col_sca_ 
             else:
@@ -615,7 +615,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             P = np.matmul(V[:,0:p],P)
             bi = B[:,h-1]
             if self.center_data:
-                Xs = centring.fit(X0,trimming=trimming)
+                Xs = centring.fit_transform(X0,trimming=trimming)
                 mX = centring.col_loc_
                 sX = centring.col_sca_
             else:

@@ -11,3 +11,4 @@ Version 0.2:
   as pandas DataFrames (or Series for y)  
 - flexibility created toward l1median centring
 - three bug fixes and updates to the documentation
+- 0.2.1: made consistent with refactoring of preprocessing module in sprm
