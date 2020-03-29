@@ -69,7 +69,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 to 'OLS' (default), 'robust' (will run sprm.rm) or 'quantile' 
                 (statsmodels.regression.quantreg). 
         center: str, how to center the data. options accepted are options from
-            sprm.robcent 
+            sprm.preprocessing 
         center_data: bool 
         scale_data: bool. Note: if set to False, convergence to correct optimum 
             is not a given. Will throw a warning. 
@@ -297,10 +297,10 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             dimensions = False
         
         # Initiate centring object and scale X data 
-        centring = VersatileScaler(center=self.center,scale=scale)      
+        centring = VersatileScaler(center=self.center,scale=scale,trimming=trimming)      
   
         if self.center_data:
-            Xs = centring.fit_transform(X,trimming=trimming)
+            Xs = centring.fit_transform(X)
             mX = centring.col_loc_
             sX = centring.col_sca_
         else:
@@ -334,7 +334,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
                 self.y0 = y0
                 
             if self.center_data:
-                ys = centring.fit_transform(y,trimming=trimming)
+                ys = centring.fit_transform(y)
                 my = centring.col_loc_
                 sy = centring.col_sca_ 
             else:
@@ -615,7 +615,7 @@ class ppdire(_BaseComposition,BaseEstimator,TransformerMixin,RegressorMixin):
             P = np.matmul(V[:,0:p],P)
             bi = B[:,h-1]
             if self.center_data:
-                Xs = centring.fit_transform(X0,trimming=trimming)
+                Xs = centring.fit_transform(X0)
                 mX = centring.col_loc_
                 sX = centring.col_sca_
             else:
